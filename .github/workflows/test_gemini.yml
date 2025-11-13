@@ -4,10 +4,11 @@ on:
   workflow_dispatch:
 
 jobs:
-  test:
+  test-gemini:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout
+      - name: Checkout code
         uses: actions/checkout@v4
 
       - name: Setup Node
@@ -15,27 +16,35 @@ jobs:
         with:
           node-version: 20
 
-      - name: Install Gemini SDK
+      - name: Install dependencies
         run: npm install @google/generative-ai
 
       - name: Run Gemini Test
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
-          cat > test.js << 'EOF'
+          echo "Running Gemini API test..."
+          node - << 'EOF'
           import { GoogleGenerativeAI } from "@google/generative-ai";
 
           const key = process.env.GEMINI_API_KEY;
           if (!key) {
-            console.error("❌ Secret not found");
+            console.error("❌ Secret GEMINI_API_KEY not found");
             process.exit(1);
           }
 
-          const ai = new GoogleGenerativeAI(key);
-          const model = ai.getGenerativeModel({ model: "gemini-2.5-flash" });
+          const client = new GoogleGenerativeAI(key);
 
-          const result = await model.generateContent("Say OK if working in CI");
-          console.log("Gemini says:", result.response.text());
+          async function test() {
+            try {
+              const model = client.getGenerativeModel({ model: "gemini-2.0-flash" });
+              const result = await model.generateContent("Say ONLY OK");
+              console.log("Gemini says:", result.response.text());
+            } catch (err) {
+              console.error("❌ Gemini Error:", err.toString());
+              process.exit(1);
+            }
+          }
+
+          test();
           EOF
-
-          node test.js
