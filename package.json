@@ -1,0 +1,24 @@
+{
+    "name": "fragile-api-divergence-predictor",
+    "version": "1.0.0",
+    "description": "",
+    "type": "module",
+    "scripts": {
+        "start": "node app/index.js",
+        "dev": "nodemon app/index.js",
+        "test": "echo \"Error: no test specified\" && exit 1"
+    },
+    "keywords": [],
+    "author": "",
+    "license": "ISC",
+    "dependencies": {
+        "@google/generative-ai": "^0.7.0",
+        "acorn": "^8.15.0",
+        "fs-extra": "^11.3.2",
+        "glob": "^10.4.5",
+        "js-yaml": "^4.1.1"
+    },
+    "devDependencies": {
+        "nodemon": "^3.1.11"
+    }
+}
