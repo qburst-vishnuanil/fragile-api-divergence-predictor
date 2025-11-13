@@ -31,4 +31,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: divergence-report
-          path: divergence_report.html
+          path: report.html
