@@ -8,13 +8,12 @@ export async function loadCodeSummary(dir) {
   const files = await glob(`${dir}/**/*.js`);
 
   let endpoints = [];
-  let rawText = "";
+  let rawText = "";   // Full source code for Gemini
 
   for (const file of files) {
     const text = await fs.readFile(file, "utf8");
     rawText += `\n// FILE: ${file}\n${text}\n`;
 
-    // Extract routes like router.get("/users", handler)
     const routeRegex = /router\.(get|post|put|patch|delete)\s*\(\s*["'`](.*?)["'`]/g;
     let match;
 
@@ -30,8 +29,8 @@ export async function loadCodeSummary(dir) {
   }
 
   return {
-    raw: rawText,
-    summary: JSON.stringify(endpoints, null, 2),
+    raw: rawText,                     // Full source code
+    summary: JSON.stringify(endpoints, null, 2), // Endpoints JSON
     endpoints
   };
 }

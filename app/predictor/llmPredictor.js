@@ -73,11 +73,15 @@ export async function predictDivergences(swaggerSummary, codeSummary, options = 
     return JSON.parse(await fs.readFile(key, "utf8"));
   }
 
-  const prompt = buildPrompt(swaggerSummary, codeSummary);
+  const prompt = buildPrompt(
+    swaggerSummary,
+    `${codeSummary.raw}\n\nDetected Endpoints:\n${codeSummary.summary}`
+  );
+  
 
   const raw = await generateFromGemini(prompt, {
     temperature: 0.0,
-    maxOutputTokens: 1600
+    maxOutputTokens: 2000
   });
 
   if (!raw) throw new Error("Gemini returned empty response");
@@ -90,9 +94,9 @@ export async function predictDivergences(swaggerSummary, codeSummary, options = 
     throw e;
   }
 
-  //------------------------------------------
-  // ⭐ FIX: Normalize paths
-  //------------------------------------------
+  //------------------------------------------------------
+  // 1️⃣ Normalize paths returned by Gemini
+  //------------------------------------------------------
   if (Array.isArray(parsed.apis)) {
     parsed.apis = parsed.apis.map(api => ({
       ...api,
@@ -100,20 +104,50 @@ export async function predictDivergences(swaggerSummary, codeSummary, options = 
     }));
   }
 
-  //------------------------------------------
-  // Build summary if missing
-  //------------------------------------------
-  parsed.summary = parsed.summary || {
-    total_apis: parsed.apis?.length || 0,
-    missing_endpoints: (parsed.apis || []).filter(a =>
+  //------------------------------------------------------
+  // 2️⃣ Parse code summary (list of implemented endpoints)
+  //------------------------------------------------------
+  let implementedEndpoints = [];
+  try {
+    implementedEndpoints = JSON.parse(codeSummary);  // codeLoader.js summary
+  } catch (e) {
+    console.error("❌ Failed to parse codeSummary JSON:\n", codeSummary);
+    throw e;
+  }
+
+  //------------------------------------------------------
+  // 3️⃣ Mark implemented: true / false
+  //------------------------------------------------------
+  parsed.apis = parsed.apis.map(api => {
+    const found = implementedEndpoints.some(ep =>
+      ep.method.toUpperCase() === api.method.toUpperCase() &&
+      ep.path === api.path
+    );
+
+    return {
+      ...api,
+      implemented: found
+    };
+  });
+
+  //------------------------------------------------------
+  // 4️⃣ Build improved summary
+  //------------------------------------------------------
+  parsed.summary = {
+    total_apis: parsed.apis.length,
+    missing_endpoints: parsed.apis.filter(a =>
       (a.predicted_divergences || []).some(d => d.type === "missing_endpoint")
     ).length,
-    high_severity: (parsed.apis || []).filter(a =>
-      (a.predicted_divergences || []).some(d => d.type === "missing_endpoint")
+    high_severity: parsed.apis.filter(a =>
+      (a.predicted_divergences || []).some(d =>
+        d.type === "missing_endpoint" || d.type === "high"
+      )
     ).length
   };
 
-  // Save to cache
+  //------------------------------------------------------
+  // 5️⃣ Save to cache
+  //------------------------------------------------------
   await fs.writeFile(key, JSON.stringify(parsed, null, 2));
 
   return parsed;
