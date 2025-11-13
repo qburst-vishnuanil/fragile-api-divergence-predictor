@@ -1,26 +1,37 @@
 // app/loader/codeLoader.js
-import fs from "fs";
+import fs from "fs/promises";
 import path from "path";
+import { glob } from "glob";
+import { normalizePath } from "../utils/normalizer.js";
 
-export async function loadCodeSummary(rootPath) {
-  let summary = "";
+export async function loadCodeSummary(dir) {
+  const files = await glob(`${dir}/**/*.js`);
 
-  function scan(dir) {
-    const entries = fs.readdirSync(dir, { withFileTypes: true });
+  let endpoints = [];
+  let rawText = "";
 
-    for (const entry of entries) {
-      const fullPath = path.join(dir, entry.name);
+  for (const file of files) {
+    const text = await fs.readFile(file, "utf8");
+    rawText += `\n// FILE: ${file}\n${text}\n`;
 
-      if (entry.isDirectory()) {
-        scan(fullPath);
-      } else if (entry.isFile() && entry.name.endsWith(".js")) {
-        const content = fs.readFileSync(fullPath, "utf8");
-        summary += `\n\n// FILE: ${fullPath}\n${content}`;
-      }
+    // Extract routes like router.get("/users", handler)
+    const routeRegex = /router\.(get|post|put|patch|delete)\s*\(\s*["'`](.*?)["'`]/g;
+    let match;
+
+    while ((match = routeRegex.exec(text)) !== null) {
+      const method = match[1].toUpperCase();
+      const route = match[2];
+
+      endpoints.push({
+        method,
+        path: normalizePath(route)
+      });
     }
   }
 
-  scan(rootPath);
-
-  return { summary };
+  return {
+    raw: rawText,
+    summary: JSON.stringify(endpoints, null, 2),
+    endpoints
+  };
 }
