@@ -1,20 +1,15 @@
 name: API Divergence Checker
 
 on:
-  push:
-    branches:
-      - "*"
   pull_request:
-    branches:
-      - "*"
+    branches: [ "main" ]
 
 jobs:
   divergence:
     runs-on: ubuntu-latest
-    env:
-      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+
     steps:
-      - name: Checkout
+      - name: Checkout code
         uses: actions/checkout@v4
 
       - name: Setup Node
@@ -23,19 +18,13 @@ jobs:
           node-version: 20
 
       - name: Install dependencies
-        run: npm ci
+        run: npm install
 
       - name: Run Divergence Predictor
-        run: npm start
+        run: node app/index.js
 
-      - name: Upload Divergence Report
-        uses: actions/upload-artifact@v3
+      - name: Upload Divergence HTML Report
+        uses: actions/upload-artifact@v4
         with:
           name: divergence-report
-          path: divergence_report.html
-
-      - name: Add comment to PR (optional)
-        if: github.event_name == 'pull_request'
-        uses: marocchino/sticky-pull-request-comment@v2
-        with:
           path: divergence_report.html
