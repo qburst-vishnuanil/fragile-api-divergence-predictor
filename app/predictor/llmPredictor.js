@@ -1,5 +1,6 @@
 // app/predictor/llmPredictor.js
 import { generateFromGemini } from "./geminiClient.js";
+import { normalizePath } from "../utils/normalizer.js";
 import fs from "fs/promises";
 import path from "path";
 
@@ -67,6 +68,7 @@ function cacheKey(sw, code) {
 export async function predictDivergences(swaggerSummary, codeSummary, options = {}) {
   const key = cacheKey(swaggerSummary, codeSummary);
 
+  // Serve from cache if allowed
   if (!options.force && await fileExists(key)) {
     return JSON.parse(await fs.readFile(key, "utf8"));
   }
@@ -88,6 +90,19 @@ export async function predictDivergences(swaggerSummary, codeSummary, options = 
     throw e;
   }
 
+  //------------------------------------------
+  // ⭐ FIX: Normalize paths
+  //------------------------------------------
+  if (Array.isArray(parsed.apis)) {
+    parsed.apis = parsed.apis.map(api => ({
+      ...api,
+      path: normalizePath(api.path)
+    }));
+  }
+
+  //------------------------------------------
+  // Build summary if missing
+  //------------------------------------------
   parsed.summary = parsed.summary || {
     total_apis: parsed.apis?.length || 0,
     missing_endpoints: (parsed.apis || []).filter(a =>
@@ -95,9 +110,10 @@ export async function predictDivergences(swaggerSummary, codeSummary, options = 
     ).length,
     high_severity: (parsed.apis || []).filter(a =>
       (a.predicted_divergences || []).some(d => d.type === "missing_endpoint")
-    ).length,
+    ).length
   };
 
+  // Save to cache
   await fs.writeFile(key, JSON.stringify(parsed, null, 2));
 
   return parsed;
