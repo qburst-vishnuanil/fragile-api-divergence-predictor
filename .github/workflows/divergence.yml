@@ -8,15 +8,12 @@ jobs:
   divergence:
     runs-on: ubuntu-latest
 
-    # 🔥 This is the important fix: load secret into environment
-    env:
-      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-
     steps:
-      - name: Checkout code
+
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Node
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -26,8 +23,10 @@ jobs:
 
       - name: Run Divergence Predictor
         run: node app/index.js
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
 
-      - name: Upload Divergence HTML Report
+      - name: Upload Divergence Report
         uses: actions/upload-artifact@v4
         with:
           name: divergence-report
