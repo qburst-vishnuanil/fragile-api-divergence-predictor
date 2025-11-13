@@ -8,6 +8,10 @@ jobs:
   divergence:
     runs-on: ubuntu-latest
 
+    # 🔥 This is the important fix: load secret into environment
+    env:
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
