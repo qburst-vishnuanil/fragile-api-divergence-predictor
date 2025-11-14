@@ -54,6 +54,7 @@ async function run() {
           timeoutRequest: 10000,
           insecure: true
         },
+
         (err, summary) => {
           if (err) {
             return server.close(() => {
@@ -62,9 +63,6 @@ async function run() {
             });
           }
 
-          // --------------------------------------
-          // FAILURES FOUND
-          // --------------------------------------
           if (summary.run.failures.length > 0) {
             console.error("❌ Test failures detected:");
             summary.run.failures.forEach(f => {
@@ -77,9 +75,6 @@ async function run() {
             });
           }
 
-          // --------------------------------------
-          // SUCCESS
-          // --------------------------------------
           server.close(() => {
             console.log("🛑 Test server stopped gracefully.");
             resolve();
