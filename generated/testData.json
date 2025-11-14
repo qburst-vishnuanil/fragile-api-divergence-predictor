@@ -2,13 +2,13 @@
   "users": [
     {
       "id": 1,
-      "name": "Test User 1",
-      "role": "User"
+      "name": "John Doe",
+      "role": "admin"
     },
     {
       "id": 2,
-      "name": "Test User 2",
-      "role": "Admin"
+      "name": "Jane Smith",
+      "role": "user"
     }
   ]
 }
