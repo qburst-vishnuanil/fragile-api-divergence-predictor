@@ -4,6 +4,20 @@ info:
   version: 1.0.0
 
 paths:
+  /health:
+    get:
+      summary: Health check
+      responses:
+        '200':
+          description: Server is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+
   /users:
     get:
       summary: Get list of users
