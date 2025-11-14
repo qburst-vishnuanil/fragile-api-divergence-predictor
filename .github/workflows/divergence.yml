@@ -37,7 +37,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: divergence-report
-          path: ./report.html
+          path: report.html
           retention-days: 7
 
       # Upload postman collection
