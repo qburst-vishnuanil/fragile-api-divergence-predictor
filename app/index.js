@@ -83,7 +83,7 @@ async function run() {
 
     if (analysis.summary.medium_severity > 0) {
       console.log("⚠️ MEDIUM severity divergence found → CI WARNING (not failing).");
-      process.exit(1);
+      process.exit(0);
     }
 
     console.log("🎉 No severe divergences detected → CI PASS.");
