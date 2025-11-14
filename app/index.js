@@ -12,8 +12,8 @@ async function run() {
     const swagger = loadSwagger("./swagger/swagger.yaml");
     console.log("Swagger summary length:", swagger.summary.length);
 
-    console.log("📂 Scanning source code (./app/src)...");
-    const code = await loadCodeSummary("./app/src");
+    console.log("📂 Scanning source code (app/src)...");
+    const code = await loadCodeSummary("app/src");
     console.log("Code summary endpoints:", code.endpoints.length);
 
     // ---------------------------------------------------------

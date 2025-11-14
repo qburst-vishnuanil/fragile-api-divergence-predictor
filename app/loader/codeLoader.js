@@ -5,14 +5,15 @@ import { glob } from "glob";
 import { normalizePath } from "../utils/normalizer.js";
 
 export async function loadCodeSummary(baseDir) {
-
-  // Force scan both controllers AND routes
+  // Always scan both controllers & routes
   const patterns = [
     `${baseDir}/controllers/**/*.js`,
-    `${baseDir}/routes/**/*.js`
+    `${baseDir}/routes/**/*.js`,
+    `${baseDir}/*.js`
   ];
 
   let files = [];
+
   for (const p of patterns) {
     const matched = await glob(p);
     files.push(...matched);
@@ -21,14 +22,17 @@ export async function loadCodeSummary(baseDir) {
   let endpoints = [];
   let rawText = "";
 
+  console.log("🔍 Scanning files:", files);
+
   for (const file of files) {
     const text = await fs.readFile(file, "utf8");
     rawText += `\n// FILE: ${file}\n${text}\n`;
 
-    // Detect routes
-    const routeRegex = /router\.(get|post|put|patch|delete)\s*\(\s*["'`](.*?)["'`]/g;
-    let match;
+    // Detect express route definitions
+    const routeRegex =
+      /router\.(get|post|put|patch|delete)\s*\(\s*["'`](.*?)["'`]/g;
 
+    let match;
     while ((match = routeRegex.exec(text)) !== null) {
       endpoints.push({
         method: match[1].toUpperCase(),
@@ -36,6 +40,8 @@ export async function loadCodeSummary(baseDir) {
       });
     }
   }
+
+  console.log("🔍 Parsed endpoints:", endpoints);
 
   return {
     raw: rawText,
