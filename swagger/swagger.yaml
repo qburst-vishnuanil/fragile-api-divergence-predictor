@@ -85,6 +85,22 @@ paths:
                 properties:
                   error:
                     type: string
+    /order:
+    get:
+      summary: Get list of orders
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    order_no:
+                      type: integer
+                                    
 
   # /health:
   #   get:
