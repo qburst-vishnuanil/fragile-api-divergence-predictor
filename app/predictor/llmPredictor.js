@@ -11,74 +11,53 @@ await fs.mkdir(CACHE_DIR, { recursive: true });
 await fs.mkdir(GENERATED_DIR, { recursive: true });
 
 /* ---------------------------------------------------------
-   PROMPT FOR GEMINI — UPDATED WITH DIVERGENCE TEST GENERATION
+   PROMPT FOR GEMINI
 ------------------------------------------------------------ */
 function buildPrompt(swaggerSummary, codeSummary) {
   return `
 You are an API Contract Enforcement Engine.
 
-Compare Swagger with the SOURCE CODE and identify ALL divergence issues.
+Compare Swagger with the source code and identify ALL divergence issues.
 
-For EACH divergence, generate AT LEAST ONE test case that reproduces the issue.
+VERY IMPORTANT:
+- You MUST return **all endpoints found in Swagger**, even if they have NO divergence.
+- Endpoints not present in Swagger but present in code should appear with type: "extra_endpoint".
+- Endpoints present in Swagger but not code should appear with type: "missing_endpoint".
+- If an endpoint is correct, return it with: "predicted_divergences": []
 
-===============================
-  📌 Divergence Severity Rules
-===============================
+Severity Assignment:
+HIGH:
+  - missing_endpoint
+  - extra_endpoint
+  - schema_mismatch
+  - method_mismatch
 
-HIGH severity:
-- missing_endpoint
-- extra_endpoint
-- method_mismatch
-- schema_mismatch
+MEDIUM:
+  - missing_field
+  - type_mismatch
+  - validation_missing
 
-MEDIUM severity:
-- missing_field
-- type_mismatch
-- validation_missing
+LOW:
+  - minor_difference
 
-LOW severity:
-- optional_field_difference
-- minor doc mismatch
-
-===============================
-  📌 Test Case Rules
-===============================
-
-Generate test cases for BOTH:
-✔ Valid API behavior (positive flow)
-✔ Divergence-based negative scenarios (VERY IMPORTANT)
-
-FOR EACH divergence type:
-- missing_endpoint → create a test calling the endpoint expecting 404
-- extra_endpoint → test the endpoint and expect 404 (not defined in Swagger)
-- method_mismatch → call the method that differs → expect 405/404
-- schema_mismatch → send invalid schema body → expect 400
-- missing_field → send request missing that field → expect 400
-- type_mismatch → send incorrect type → expect 400
-- validation_missing → send invalid request → expect 400
-
-===============================
-  📌 STRICT JSON OUTPUT FORMAT
-===============================
+Return STRICT JSON:
 
 {
   "apis": [
-      {
-        "path": "",
-        "method": "",
-        "expected_request_fields": [],
-        "expected_response_fields": [],
-        "required_fields": [],
-        "predicted_divergences": [
-            { "type": "", "details": "", "severity": "" }
-        ]
-      }
+    {
+      "path": "",
+      "method": "",
+      "expected_request_fields": [],
+      "expected_response_fields": [],
+      "required_fields": [],
+      "predicted_divergences": [
+        { "type": "", "details": "", "severity": "" }
+      ]
+    }
   ],
-  "test_cases": [
-      { "name": "", "method": "", "path": "", "requestBody": {}, "expectedStatus": 200 }
-  ],
-  "postman_collection": { },
-  "test_data": { },
+  "test_cases": [],
+  "postman_collection": {},
+  "test_data": {},
   "summary": { "total_apis": 0 }
 }
 
@@ -96,7 +75,7 @@ ${codeSummary}
 function extractJson(text) {
   const s = text.indexOf("{");
   const e = text.lastIndexOf("}");
-  if (s === -1 || e === -1) throw new Error("No JSON output from LLM");
+  if (s === -1 || e === -1) throw new Error("NO JSON FOUND IN LLM OUTPUT");
   return JSON.parse(text.substring(s, e + 1));
 }
 
@@ -106,12 +85,12 @@ function extractJson(text) {
 function cacheKey(sw, code) {
   return path.join(
     CACHE_DIR,
-    Buffer.from(sw + "\n" + code).toString("base64").slice(0, 60) + ".json"
+    Buffer.from(sw + code).toString("base64").slice(0, 60) + ".json"
   );
 }
 
 /* ---------------------------------------------------------
-   SEVERITY CALCULATOR
+   Severity Mapper
 ------------------------------------------------------------ */
 function calculateSeverity(type = "") {
   const t = type.toLowerCase();
@@ -133,61 +112,84 @@ function calculateSeverity(type = "") {
 }
 
 /* ---------------------------------------------------------
-   MAIN LLM PROCESSOR
+   Extract ALL Swagger paths
+------------------------------------------------------------ */
+function extractSwaggerPaths(swaggerText) {
+  const regex = /\/[A-Za-z0-9_\-/{}/]*/g;
+  const found = swaggerText.match(regex) || [];
+  return [...new Set(found.map(p => normalizePath(p)))];
+}
+
+/* ---------------------------------------------------------
+   MAIN FUNCTION
 ------------------------------------------------------------ */
 export async function predictDivergences(swaggerSummary, codeSummary, options = {}) {
   const rawCode = codeSummary?.raw || "";
   const key = cacheKey(swaggerSummary, rawCode);
 
-  // Use cache unless forced
   if (!options.force && await fileExists(key)) {
     return JSON.parse(await fs.readFile(key, "utf8"));
   }
 
   const prompt = buildPrompt(
     swaggerSummary,
-    `${rawCode}\n\nDetected Endpoints:\n${JSON.stringify(
-      codeSummary?.endpoints || [],
-      null,
-      2
-    )}`
+    `${rawCode}\n\nDetected Endpoints:\n${JSON.stringify(codeSummary?.endpoints || [], null, 2)}`
   );
 
-  const raw = await generateFromGemini(prompt, {
+  const llmOutput = await generateFromGemini(prompt, {
     temperature: 0.0,
-    maxOutputTokens: 3000
+    maxOutputTokens: 3200
   });
 
-  if (!raw) throw new Error("Empty LLM response");
+  if (!llmOutput) throw new Error("EMPTY OUTPUT FROM GEMINI");
 
-  let parsed = extractJson(raw);
+  let parsed = extractJson(llmOutput);
 
   /* ---------------------------------------------------------
-     Normalize APIs + Assign Severity
+     NORMALIZE API ENTRIES
   ------------------------------------------------------------ */
   parsed.apis = (parsed.apis || []).map(api => {
-    const method = (api.method || "GET").toUpperCase();
-    const pathVal = normalizePath(api.path || "");
-
-    const divergences = (api.predicted_divergences || []).map(div => ({
-      ...div,
-      severity: div.severity || calculateSeverity(div.type)
-    }));
-
-    return { ...api, method, path: pathVal, predicted_divergences: divergences };
+    return {
+      ...api,
+      method: (api.method || "GET").toUpperCase(),
+      path: normalizePath(api.path || ""),
+      predicted_divergences: (api.predicted_divergences || []).map(div => ({
+        ...div,
+        severity: div.severity || calculateSeverity(div.type)
+      }))
+    };
   });
 
   /* ---------------------------------------------------------
-     IMPLEMENTED ENDPOINT DETECTION
+     MERGE: Ensure ALL Swagger APIs exist
   ------------------------------------------------------------ */
-  const implementedEndpoints = codeSummary?.endpoints || [];
+  const swaggerPaths = extractSwaggerPaths(swaggerSummary);
+
+  swaggerPaths.forEach(swPath => {
+    const exists = parsed.apis.some(a => a.path === swPath);
+    if (!exists) {
+      parsed.apis.push({
+        path: swPath,
+        method: "GET",
+        expected_request_fields: [],
+        expected_response_fields: [],
+        required_fields: [],
+        predicted_divergences: [],
+        implemented: false
+      });
+    }
+  });
+
+  /* ---------------------------------------------------------
+     TAG_IMPLEMENTED using scanned code
+  ------------------------------------------------------------ */
+  const implemented = codeSummary?.endpoints || [];
 
   parsed.apis = parsed.apis.map(api => {
-    const match = implementedEndpoints.some(ep =>
-      ep.method === api.method && normalizePath(ep.path) === api.path
+    const found = implemented.some(
+      ep => ep.method === api.method && normalizePath(ep.path) === api.path
     );
-
-    return { ...api, implemented: match };
+    return { ...api, implemented: found };
   });
 
   /* ---------------------------------------------------------
@@ -203,19 +205,19 @@ export async function predictDivergences(swaggerSummary, codeSummary, options = 
   };
 
   /* ---------------------------------------------------------
-     Normalize Test Cases (LLM-generated)
+     Normalize Test Cases
   ------------------------------------------------------------ */
-  parsed.test_cases = (parsed.test_cases || []).map(tc => {
-    const method = (tc.method || "GET").toUpperCase();
-    const pathVal = normalizePath(tc.path || "/");
-
-    const expected = Number(tc.expectedStatus) || (method === "POST" ? 201 : 200);
-
-    return { ...tc, method, path: pathVal, expectedStatus: expected };
-  });
+  parsed.test_cases = (parsed.test_cases || []).map(tc => ({
+    ...tc,
+    method: (tc.method || "GET").toUpperCase(),
+    path: normalizePath(tc.path || "/"),
+    expectedStatus:
+      Number(tc.expectedStatus) ||
+      (tc.method === "POST" ? 201 : 200)
+  }));
 
   /* ---------------------------------------------------------
-     Save generated Postman collection
+     SAVE Postman & Test Data
   ------------------------------------------------------------ */
   if (parsed.postman_collection) {
     await fs.writeFile(
@@ -224,9 +226,6 @@ export async function predictDivergences(swaggerSummary, codeSummary, options = 
     );
   }
 
-  /* ---------------------------------------------------------
-     Save test data
-  ------------------------------------------------------------ */
   if (parsed.test_data) {
     await fs.writeFile(
       path.join(GENERATED_DIR, "testData.json"),
@@ -234,20 +233,17 @@ export async function predictDivergences(swaggerSummary, codeSummary, options = 
     );
   }
 
-  // Save to cache
+  /* ---------------------------------------------------------
+     Store Cache + Return
+  ------------------------------------------------------------ */
   await fs.writeFile(key, JSON.stringify(parsed, null, 2));
-
   return parsed;
 }
 
 /* ---------------------------------------------------------
-   File exists helper
+   File Exists
 ------------------------------------------------------------ */
 async function fileExists(p) {
-  try {
-    await fs.access(p);
-    return true;
-  } catch {
-    return false;
-  }
+  try { await fs.access(p); return true; }
+  catch { return false; }
 }
