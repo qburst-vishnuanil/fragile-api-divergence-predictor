@@ -199,7 +199,7 @@ export async function predictDivergences(swaggerSummary, codeSummary, options = 
 
 /* ----------------------------------------------------------
    File exists helper
------------------------------------------------------------- */
+------------------------------------------------------------ -*/
 async function fileExists(p) {
   try { await fs.access(p); return true; }
   catch { return false; }
