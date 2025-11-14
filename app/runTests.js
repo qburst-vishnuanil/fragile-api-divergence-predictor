@@ -18,7 +18,7 @@ async function run() {
   const collectionPath = path.resolve("generated/postman_collection.json");
 
   // --------------------------------------
-  // Ensure collection exists
+  // Ensure Postman collection exists
   // --------------------------------------
   try {
     await fs.access(collectionPath);
@@ -36,21 +36,34 @@ async function run() {
       newman.run(
         {
           collection: collectionPath,
-          reporters: "cli",
+
+          // ⭐ reporters from main branch
+          reporters: ["cli", "htmlextra"],
+          reporter: {
+            htmlextra: {
+              export: "generated/test-report.html",
+              logs: true,
+              browserTitle: "API Divergence Test Report",
+              title: "AI-Generated Test Execution Results",
+              testPaging: true,
+              showEnvironmentData: true,
+              skipSensitiveData: true
+            }
+          },
+
           timeoutRequest: 10000,
           insecure: true
         },
         (err, summary) => {
           if (err) {
-            server.close(() => {
+            return server.close(() => {
               console.error("❌ Newman encountered an error:", err.message);
               reject(err);
             });
-            return;
           }
 
           // --------------------------------------
-          // Handle test failures
+          // FAILURES FOUND
           // --------------------------------------
           if (summary.run.failures.length > 0) {
             console.error("❌ Test failures detected:");
@@ -58,18 +71,17 @@ async function run() {
               console.error(`➡ ${f.source.name}: ${f.error.message}`);
             });
 
-            server.close(() => {
+            return server.close(() => {
               console.log("🛑 Test server stopped after failures.");
               reject(new Error("Test suite failed"));
             });
-            return;
           }
 
           // --------------------------------------
-          // No failures → success
+          // SUCCESS
           // --------------------------------------
           server.close(() => {
-            console.log("🛑 Test server stopped.");
+            console.log("🛑 Test server stopped gracefully.");
             resolve();
           });
         }
