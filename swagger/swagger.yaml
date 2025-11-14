@@ -32,7 +32,9 @@ paths:
           application/json:
             schema:
               type: object
-              required: [name, role]
+              required:
+                - name
+                - role
               properties:
                 name:
                   type: string
@@ -41,6 +43,15 @@ paths:
       responses:
         '201':
           description: Created
+        '400':
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
 
   /users/{id}:
     get:
@@ -64,4 +75,13 @@ paths:
                   name:
                     type: string
                   role:
+                    type: string
+        '404':
+          description: User not found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
                     type: string

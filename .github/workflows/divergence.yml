@@ -41,6 +41,7 @@ jobs:
 
   run-tests:
     needs: divergence
+    if: always()
     runs-on: ubuntu-latest
 
     steps:
