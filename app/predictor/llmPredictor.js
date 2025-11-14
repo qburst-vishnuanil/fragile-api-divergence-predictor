@@ -197,7 +197,7 @@ export async function predictDivergences(swaggerSummary, codeSummary, options = 
   return parsed;
 }
 
-/* ----------------------------------------------------------
+/* ---------------------------------------------------------
    File exists helper
 ------------------------------------------------------------*/
 async function fileExists(p) {
