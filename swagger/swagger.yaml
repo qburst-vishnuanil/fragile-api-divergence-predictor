@@ -100,8 +100,6 @@ paths:
                   properties:
                     order_no:
                       type: integer
-                                    
-
   # /health:
   #   get:
   #     summary: Health check
