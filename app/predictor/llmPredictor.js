@@ -5,59 +5,109 @@ import fs from "fs/promises";
 import path from "path";
 
 const CACHE_DIR = path.resolve(".cache");
-await fs.mkdir(CACHE_DIR, { recursive: true });
+const GENERATED_DIR = path.resolve("generated");
 
+await fs.mkdir(CACHE_DIR, { recursive: true });
+await fs.mkdir(GENERATED_DIR, { recursive: true });
+
+/* ---------------------------------------------------------
+   🔥 BUILD ADVANCED PROMPT (includes Postman collection)
+------------------------------------------------------------ */
 function buildPrompt(swaggerSummary, codeSummary) {
   return `
-You are an API Divergence Detection Engine.
+You are an API Contract Enforcement Engine.
 
-Compare:
+Your job is to compare the Swagger API contract with the source code implementation and detect ALL contract divergence issues.
 
---- SWAGGER SPEC ---
+========================
+📘 SWAGGER CONTRACT
+========================
 ${swaggerSummary}
 
---- SOURCE CODE ---
+========================
+💻 SOURCE CODE IMPLEMENTATION
+========================
 ${codeSummary}
 
-TASK:
-1. Identify missing endpoints, mismatched fields, incorrect parameters, request/response schema issues.
-2. Generate synthetic test cases.
-3. Output STRICT JSON ONLY in this schema:
+========================
+🎯 REQUIRED ANALYSIS
+========================
+You MUST identify ALL divergence types:
+- Missing endpoints
+- Extra endpoints
+- Path mismatch
+- Method mismatch
+- Request body mismatches
+- Response schema mismatches
+- Missing required fields
+- Incorrect types
+- Missing validations
+- Unexpected status codes
+
+========================
+🧪 TEST CASE GENERATION
+========================
+Generate detailed synthetic test cases covering:
+- Positive cases
+- Missing fields
+- Wrong types
+- Invalid path parameters
+- Schema mismatches
+- Missing/extra field validation
+- Divergence reproduction
+
+========================
+📦 POSTMAN COLLECTION
+========================
+Generate a **Postman Collection v2.1.0 format** that contains ALL generated test cases.
+
+Postman format:
+{
+  "info": { "name": "", "schema": "" },
+  "item": [ { "name": "", "request": { ... }, "response": [] } ]
+}
+
+The test items you generate MUST reference each divergence scenario.
+
+========================
+📤 OUTPUT JSON FORMAT
+========================
+Return ONLY STRICT JSON in this format:
 
 {
-  "apis": [
-    {
-      "path": "",
-      "method": "",
-      "expected_request_fields": [],
-      "expected_response_fields": [],
-      "required_fields": [],
-      "predicted_divergences": [
-        { "type": "", "details": "" }
-      ]
-    }
-  ],
-  "test_cases": [
-    { "name": "", "method": "", "path": "", "requestBody": null, "expectedStatus": 200 }
-  ],
+  "apis": [...],
+  "test_cases": [...],
+  "postman_collection": { ... },
   "summary": {
     "total_apis": 0,
     "missing_endpoints": 0,
+    "extra_endpoints": 0,
+    "schema_mismatch": 0,
     "high_severity": 0
   }
 }
 
-Return STRICT JSON only.
+DO NOT return explanations.
+DO NOT return text.
+STRICT JSON ONLY.
 `;
 }
 
+/* ---------------------------------------------------------
+   JSON extraction helper
+------------------------------------------------------------ */
 function extractJson(text) {
   const start = text.indexOf("{");
   const end = text.lastIndexOf("}");
-  if (start === -1 || end === -1) throw new Error("No JSON object found");
-  return JSON.parse(text.slice(start, end + 1));
+  if (start === -1 || end === -1)
+    throw new Error("No JSON object found in LLM output");
+
+  return JSON.parse(text.substring(start, end + 1));
 }
 
+/* ---------------------------------------------------------
+   Cache key
+------------------------------------------------------------ */
 function cacheKey(sw, code) {
   return path.join(
     CACHE_DIR,
@@ -65,10 +115,12 @@ function cacheKey(sw, code) {
   );
 }
 
+/* ---------------------------------------------------------
+   MAIN: Predict divergences + generate test suite
+------------------------------------------------------------ */
 export async function predictDivergences(swaggerSummary, codeSummary, options = {}) {
-  const key = cacheKey(swaggerSummary, codeSummary);
+  const key = cacheKey(swaggerSummary, codeSummary.raw);
 
-  // Serve from cache if allowed
   if (!options.force && await fileExists(key)) {
     return JSON.parse(await fs.readFile(key, "utf8"));
   }
@@ -77,26 +129,25 @@ export async function predictDivergences(swaggerSummary, codeSummary, options = 
     swaggerSummary,
     `${codeSummary.raw}\n\nDetected Endpoints:\n${codeSummary.summary}`
   );
-  
 
   const raw = await generateFromGemini(prompt, {
     temperature: 0.0,
-    maxOutputTokens: 2000
+    maxOutputTokens: 3000
   });
 
-  if (!raw) throw new Error("Gemini returned empty response");
+  if (!raw) throw new Error("Gemini returned empty response!");
 
   let parsed;
   try {
     parsed = extractJson(raw);
-  } catch (e) {
-    console.log("Raw LLM output:\n", raw);
-    throw e;
+  } catch (err) {
+    console.error("RAW LLM OUTPUT:\n", raw);
+    throw err;
   }
 
-  //------------------------------------------------------
-  // 1️⃣ Normalize paths returned by Gemini
-  //------------------------------------------------------
+  /* ---------------------------------------------------------
+     Normalise paths
+  ------------------------------------------------------------ */
   if (Array.isArray(parsed.apis)) {
     parsed.apis = parsed.apis.map(api => ({
       ...api,
@@ -104,55 +155,66 @@ export async function predictDivergences(swaggerSummary, codeSummary, options = 
     }));
   }
 
-  //------------------------------------------------------
-  // 2️⃣ Parse code summary (list of implemented endpoints)
-  //------------------------------------------------------
+  /* ---------------------------------------------------------
+     Determine implemented endpoints
+  ------------------------------------------------------------ */
   let implementedEndpoints = [];
   try {
-    implementedEndpoints = JSON.parse(codeSummary);  // codeLoader.js summary
-  } catch (e) {
-    console.error("❌ Failed to parse codeSummary JSON:\n", codeSummary);
-    throw e;
+    implementedEndpoints = codeSummary.endpoints;
+  } catch (err) {
+    console.error("Could not parse endpoints from codeSummary.");
   }
 
-  //------------------------------------------------------
-  // 3️⃣ Mark implemented: true / false
-  //------------------------------------------------------
   parsed.apis = parsed.apis.map(api => {
     const found = implementedEndpoints.some(ep =>
-      ep.method.toUpperCase() === api.method.toUpperCase() &&
+      ep.method === api.method &&
       ep.path === api.path
     );
 
-    return {
-      ...api,
-      implemented: found
-    };
+    return { ...api, implemented: found };
   });
 
-  //------------------------------------------------------
-  // 4️⃣ Build improved summary
-  //------------------------------------------------------
+  /* ---------------------------------------------------------
+     Save Postman Collection
+  ------------------------------------------------------------ */
+  if (parsed.postman_collection) {
+    const filePath = path.join(GENERATED_DIR, "postman_collection.json");
+    await fs.writeFile(filePath, JSON.stringify(parsed.postman_collection, null, 2));
+    console.log(`📦 Postman collection saved → ${filePath}`);
+  }
+
+  /* ---------------------------------------------------------
+     Build summary
+  ------------------------------------------------------------ */
   parsed.summary = {
     total_apis: parsed.apis.length,
     missing_endpoints: parsed.apis.filter(a =>
-      (a.predicted_divergences || []).some(d => d.type === "missing_endpoint")
+      a.predicted_divergences?.some(d => d.type === "missing_endpoint")
+    ).length,
+    extra_endpoints: parsed.apis.filter(a =>
+      a.predicted_divergences?.some(d => d.type === "extra_endpoint")
+    ).length,
+    schema_mismatch: parsed.apis.filter(a =>
+      a.predicted_divergences?.some(d => d.type === "schema_mismatch")
     ).length,
     high_severity: parsed.apis.filter(a =>
-      (a.predicted_divergences || []).some(d =>
-        d.type === "missing_endpoint" || d.type === "high"
+      a.predicted_divergences?.some(d =>
+        ["missing_endpoint", "schema_mismatch", "method_mismatch"].includes(d.type)
       )
     ).length
   };
 
-  //------------------------------------------------------
-  // 5️⃣ Save to cache
-  //------------------------------------------------------
+  /* ---------------------------------------------------------
+     Save to cache for next run
+  ------------------------------------------------------------ */
   await fs.writeFile(key, JSON.stringify(parsed, null, 2));
 
   return parsed;
 }
 
+/* ---------------------------------------------------------
+   File existence helper
+------------------------------------------------------------ */
 async function fileExists(p) {
   try {
     await fs.access(p);
