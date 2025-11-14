@@ -1,9 +1,12 @@
 import fs from "fs";
 import yaml from "js-yaml";
 
-export function loadSwagger(path) {
-  const file = yaml.load(fs.readFileSync(path, "utf8"));
-  const summary = JSON.stringify(file.paths, null, 2);
+export function loadSwagger(filePath = "./swagger/swagger.yaml") {
+  const file = fs.readFileSync(filePath, "utf8");
+  const json = yaml.load(file);
 
-  return { file, summary };
+  return {
+    raw: json,
+    summary: JSON.stringify(json, null, 2)
+  };
 }
