@@ -86,16 +86,16 @@ paths:
                   error:
                     type: string
 
-  /health:
-    get:
-      summary: Health check
-      responses:
-        '200':
-          description: API is healthy
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  status:
-                    type: string
+  # /health:
+  #   get:
+  #     summary: Health check
+  #     responses:
+  #       '200':
+  #         description: API is healthy
+  #         content:
+  #           application/json:
+  #             schema:
+  #               type: object
+  #               properties:
+  #                 status:
+  #                   type: string

@@ -20,10 +20,15 @@ jobs:
       - name: Install dependencies
         run: npm install
 
+      # ⬇️ Capture exit code from index.js
       - name: Run Divergence Predictor (LLM)
-        run: node app/index.js
+        id: run_divergence
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          echo "🔍 Running divergence predictor..."
+          node app/index.js
+          echo "exit_code=$?" >> $GITHUB_OUTPUT
 
       - name: Upload Divergence Report
         if: always()
@@ -39,9 +44,16 @@ jobs:
           name: postman-collection
           path: generated/postman_collection.json
 
+      # ❗ FAIL ONLY IF exit_code = 2 (HIGH severity)
+      - name: Fail on High Severity Only
+        if: steps.run_divergence.outputs.exit_code == '2'
+        run: |
+          echo "❌ High severity divergence detected → failing CI."
+          exit 1
+
   run-tests:
     needs: divergence
-    if: always()
+    if: always()  # always run tests even if divergence job detects issues
     runs-on: ubuntu-latest
 
     steps:
