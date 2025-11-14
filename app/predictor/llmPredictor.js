@@ -11,32 +11,56 @@ await fs.mkdir(CACHE_DIR, { recursive: true });
 await fs.mkdir(GENERATED_DIR, { recursive: true });
 
 /* ---------------------------------------------------------
-   PROMPT FOR GEMINI
+   PROMPT FOR GEMINI — UPDATED WITH DIVERGENCE TEST GENERATION
 ------------------------------------------------------------ */
 function buildPrompt(swaggerSummary, codeSummary) {
   return `
 You are an API Contract Enforcement Engine.
 
-Compare Swagger with the actual API implementation and identify all divergence issues.
+Compare Swagger with the SOURCE CODE and identify ALL divergence issues.
 
-Assign SEVERITY for each divergence:
+For EACH divergence, generate AT LEAST ONE test case that reproduces the issue.
 
-HIGH:
+===============================
+  📌 Divergence Severity Rules
+===============================
+
+HIGH severity:
 - missing_endpoint
 - extra_endpoint
-- schema_mismatch
 - method_mismatch
+- schema_mismatch
 
-MEDIUM:
+MEDIUM severity:
 - missing_field
 - type_mismatch
 - validation_missing
 
-LOW:
+LOW severity:
 - optional_field_difference
-- minor description mismatch
+- minor doc mismatch
 
-STRICT JSON OUTPUT:
+===============================
+  📌 Test Case Rules
+===============================
+
+Generate test cases for BOTH:
+✔ Valid API behavior (positive flow)
+✔ Divergence-based negative scenarios (VERY IMPORTANT)
+
+FOR EACH divergence type:
+- missing_endpoint → create a test calling the endpoint expecting 404
+- extra_endpoint → test the endpoint and expect 404 (not defined in Swagger)
+- method_mismatch → call the method that differs → expect 405/404
+- schema_mismatch → send invalid schema body → expect 400
+- missing_field → send request missing that field → expect 400
+- type_mismatch → send incorrect type → expect 400
+- validation_missing → send invalid request → expect 400
+
+===============================
+  📌 STRICT JSON OUTPUT FORMAT
+===============================
+
 {
   "apis": [
       {
@@ -53,8 +77,8 @@ STRICT JSON OUTPUT:
   "test_cases": [
       { "name": "", "method": "", "path": "", "requestBody": {}, "expectedStatus": 200 }
   ],
-  "postman_collection": { ... },
-  "test_data": { ... },
+  "postman_collection": { },
+  "test_data": { },
   "summary": { "total_apis": 0 }
 }
 
@@ -70,14 +94,10 @@ ${codeSummary}
    JSON extractor
 ------------------------------------------------------------ */
 function extractJson(text) {
-  const start = text.indexOf("{");
-  const end = text.lastIndexOf("}");
-
-  if (start === -1 || end === -1) {
-    throw new Error("No JSON found in LLM output");
-  }
-
-  return JSON.parse(text.substring(start, end + 1));
+  const s = text.indexOf("{");
+  const e = text.lastIndexOf("}");
+  if (s === -1 || e === -1) throw new Error("No JSON output from LLM");
+  return JSON.parse(text.substring(s, e + 1));
 }
 
 /* ---------------------------------------------------------
@@ -91,7 +111,7 @@ function cacheKey(sw, code) {
 }
 
 /* ---------------------------------------------------------
-   SEVERITY MAPPER
+   SEVERITY CALCULATOR
 ------------------------------------------------------------ */
 function calculateSeverity(type = "") {
   const t = type.toLowerCase();
@@ -113,70 +133,68 @@ function calculateSeverity(type = "") {
 }
 
 /* ---------------------------------------------------------
-   MAIN: Predict divergences + test cases + test data
+   MAIN LLM PROCESSOR
 ------------------------------------------------------------ */
 export async function predictDivergences(swaggerSummary, codeSummary, options = {}) {
   const rawCode = codeSummary?.raw || "";
   const key = cacheKey(swaggerSummary, rawCode);
 
-  // Use cache unless force = true
+  // Use cache unless forced
   if (!options.force && await fileExists(key)) {
     return JSON.parse(await fs.readFile(key, "utf8"));
   }
 
   const prompt = buildPrompt(
     swaggerSummary,
-    `${rawCode}\n\nDetected Endpoints:\n${JSON.stringify(codeSummary.endpoints || [], null, 2)}`
+    `${rawCode}\n\nDetected Endpoints:\n${JSON.stringify(
+      codeSummary?.endpoints || [],
+      null,
+      2
+    )}`
   );
 
-  const llmRaw = await generateFromGemini(prompt, {
+  const raw = await generateFromGemini(prompt, {
     temperature: 0.0,
-    maxOutputTokens: 3000,
+    maxOutputTokens: 3000
   });
 
-  if (!llmRaw) throw new Error("Gemini returned empty output");
+  if (!raw) throw new Error("Empty LLM response");
 
-  let parsed = extractJson(llmRaw);
+  let parsed = extractJson(raw);
 
   /* ---------------------------------------------------------
-     Normalize API entries
+     Normalize APIs + Assign Severity
   ------------------------------------------------------------ */
   parsed.apis = (parsed.apis || []).map(api => {
     const method = (api.method || "GET").toUpperCase();
     const pathVal = normalizePath(api.path || "");
 
-    const divergences = Array.isArray(api.predicted_divergences)
-      ? api.predicted_divergences.map(div => ({
-          ...div,
-          severity: div.severity || calculateSeverity(div.type)
-        }))
-      : [];
+    const divergences = (api.predicted_divergences || []).map(div => ({
+      ...div,
+      severity: div.severity || calculateSeverity(div.type)
+    }));
 
-    return {
-      ...api,
-      method,
-      path: pathVal,
-      predicted_divergences: divergences
-    };
+    return { ...api, method, path: pathVal, predicted_divergences: divergences };
   });
 
   /* ---------------------------------------------------------
-     Attach `implemented = true/false` based on scanned code
+     IMPLEMENTED ENDPOINT DETECTION
   ------------------------------------------------------------ */
-  const implementedEndpoints = codeSummary.endpoints || [];
+  const implementedEndpoints = codeSummary?.endpoints || [];
 
   parsed.apis = parsed.apis.map(api => {
-    const found = implementedEndpoints.some(
-      ep => ep.method === api.method && normalizePath(ep.path) === api.path
+    const match = implementedEndpoints.some(ep =>
+      ep.method === api.method && normalizePath(ep.path) === api.path
     );
 
-    return { ...api, implemented: found };
+    return { ...api, implemented: match };
   });
 
   /* ---------------------------------------------------------
-     Severity Summary Calculation
+     SUMMARY
   ------------------------------------------------------------ */
-  const all = parsed.apis.flatMap(api => api.predicted_divergences);
+  const all = parsed.apis.flatMap(a => a.predicted_divergences);
+
   parsed.summary = {
     total_apis: parsed.apis.length,
     high_severity: all.filter(d => d.severity === "HIGH").length,
@@ -185,48 +203,45 @@ export async function predictDivergences(swaggerSummary, codeSummary, options = 
   };
 
   /* ---------------------------------------------------------
-     Normalize Test Cases
+     Normalize Test Cases (LLM-generated)
   ------------------------------------------------------------ */
   parsed.test_cases = (parsed.test_cases || []).map(tc => {
     const method = (tc.method || "GET").toUpperCase();
     const pathVal = normalizePath(tc.path || "/");
 
-    const expected = Number(tc.expectedStatus) ||
-      (method === "POST" ? 201 : 200);
+    const expected = Number(tc.expectedStatus) || (method === "POST" ? 201 : 200);
 
-    return {
-      ...tc,
-      method,
-      path: pathVal,
-      expectedStatus: expected
-    };
+    return { ...tc, method, path: pathVal, expectedStatus: expected };
   });
 
   /* ---------------------------------------------------------
-     Save Postman Collection
+     Save generated Postman collection
   ------------------------------------------------------------ */
   if (parsed.postman_collection) {
-    const filePath = path.join(GENERATED_DIR, "postman_collection.json");
-    await fs.writeFile(filePath, JSON.stringify(parsed.postman_collection, null, 2));
+    await fs.writeFile(
+      path.join(GENERATED_DIR, "postman_collection.json"),
+      JSON.stringify(parsed.postman_collection, null, 2)
+    );
   }
 
   /* ---------------------------------------------------------
-     Save Test Data
+     Save test data
   ------------------------------------------------------------ */
   if (parsed.test_data) {
-    const tdPath = path.join(GENERATED_DIR, "testData.json");
-    await fs.writeFile(tdPath, JSON.stringify(parsed.test_data, null, 2));
+    await fs.writeFile(
+      path.join(GENERATED_DIR, "testData.json"),
+      JSON.stringify(parsed.test_data, null, 2)
+    );
   }
 
-  /* ---------------------------------------------------------
-     Cache and return
-  ------------------------------------------------------------ */
+  // Save to cache
   await fs.writeFile(key, JSON.stringify(parsed, null, 2));
+
   return parsed;
 }
 
 /* ---------------------------------------------------------
-   File exists checker
+   File exists helper
 ------------------------------------------------------------ */
 async function fileExists(p) {
   try {
