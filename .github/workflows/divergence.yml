@@ -21,7 +21,6 @@ jobs:
         run: npm install
 
       - name: Run Divergence Predictor (LLM)
-        id: divergence_step
         run: node app/index.js
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
@@ -42,7 +41,6 @@ jobs:
 
   run-tests:
     needs: divergence
-    if: needs.divergence.result == 'success'   # ONLY run tests when divergence job passed
     runs-on: ubuntu-latest
 
     steps:
@@ -53,11 +51,21 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-    
-      - name: Install dependencies
+
+      - name: Install Dependencies
         run: npm install
 
-      - name: Run AI-generated test suite
+      # 🔥 IMPORTANT: Download collection from job #1
+      - name: Download Postman Collection Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: postman-collection
+          path: generated
+
+      - name: Verify collection exists
+        run: ls -R generated
+
+      - name: Run AI-generated Postman Test Suite
         run: node app/runTests.js
         env:
           PORT: 3000
