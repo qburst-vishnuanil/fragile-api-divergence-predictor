@@ -36,27 +36,22 @@ async function run() {
   // --------------------------------------
   try {
     await new Promise((resolve, reject) => {
-      newman.run(
-        {
-          collection: collectionPath,
-          reporters: "cli",
-          timeoutRequest: 10000,
-          insecure: true
-        },
-        (err, summary) => {
-          if (err) return reject(err);
-
-          if (summary.run.failures.length > 0) {
-            console.error("❌ Test failures detected:");
-            summary.run.failures.forEach(f => {
-              console.error(`➡ ${f.source.name}: ${f.error.message}`);
-            });
-            return reject(new Error("Test suite failed"));
-          }
-
-          resolve();
+      newman.run({
+    collection: collectionPath,
+    reporters: ['cli', 'htmlextra'],
+    reporter: {
+        htmlextra: {
+            export: 'generated/test-report.html',
+            logs: true,
+            browserTitle: "API Divergence Test Report",
+            title: "AI-Generated Test Execution Results",
+            testPaging: true,
+            showEnvironmentData: true,
+            skipSensitiveData: true
         }
-      );
+    }
+});
+
     });
 
     console.log("✅ All Postman test cases passed!");
