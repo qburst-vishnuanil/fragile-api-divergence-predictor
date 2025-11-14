@@ -29,9 +29,9 @@ export const getUsers = (req, res) => {
 
 // POST /users
 export const createUser = (req, res) => {
-  const { name, role , age } = req.body;
+  const { name } = req.body;
 
-  if (!name || !role || !age) {
+  if (!name) {
     return res.status(400).json({
       error: "name and role are required"
     });
