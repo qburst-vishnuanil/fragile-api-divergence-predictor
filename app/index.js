@@ -36,10 +36,11 @@ async function run() {
         }
       };
 
-      await generateHTMLReport(emptyReport, "report.html");
+      const REPORT_PATH = path.resolve("report.html");
+      await generateHTMLReport(analysis, REPORT_PATH);
       await generatePostmanCollection([], "generated/postman_collection.json");
 
-      console.log("📄 Empty report + empty collection generated.");
+      console.log("📄 Report generated at:", REPORT_PATH);
       process.exit(0);
     }
 
