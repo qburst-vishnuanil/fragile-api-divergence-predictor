@@ -85,7 +85,8 @@ paths:
                 properties:
                   error:
                     type: string
- /health:
+
+  /health:
     get:
       summary: Health check
       responses:
