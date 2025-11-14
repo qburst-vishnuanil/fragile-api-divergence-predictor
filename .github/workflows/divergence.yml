@@ -2,14 +2,13 @@ name: API Divergence Checker
 
 on:
   pull_request:
-    branches: [ "main" ]
+    branches: ["main"]
 
 jobs:
   divergence:
     runs-on: ubuntu-latest
 
     steps:
-
       - name: Checkout repository
         uses: actions/checkout@v4
 
@@ -21,7 +20,8 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      - name: Run Divergence Predictor
+      - name: Run Divergence Predictor (LLM)
+        id: divergence_step
         run: node app/index.js
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
@@ -33,12 +33,31 @@ jobs:
           name: divergence-report
           path: report.html
 
-      - name: Upload Postman Collection
+      - name: Upload Postman collection
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: postman-collection
           path: generated/postman_collection.json
 
-      - name: Run Generated Postman Tests
+  run-tests:
+    needs: divergence
+    if: needs.divergence.result == 'success'   # ONLY run tests when divergence job passed
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+    
+      - name: Install dependencies
+        run: npm install
+
+      - name: Run AI-generated test suite
         run: node app/runTests.js
+        env:
+          PORT: 3000
