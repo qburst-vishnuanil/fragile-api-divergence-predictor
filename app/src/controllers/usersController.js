@@ -32,7 +32,7 @@ export const getUsers = (req, res) => {
 
 // POST /users
 export const createUser = (req, res) => {
-  const { name } = req.body;
+  const { name , role } = req.body;
 
   if (!name || !role) {
     return res.status(400).json({
