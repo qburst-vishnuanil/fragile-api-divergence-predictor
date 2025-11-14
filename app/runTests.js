@@ -31,9 +31,6 @@ async function run() {
 
   console.log("🧪 Running Postman tests on:", collectionPath);
 
-  // --------------------------------------
-  // Execute Newman programmatically
-  // --------------------------------------
   try {
     await new Promise((resolve, reject) => {
       newman.run(
@@ -44,28 +41,46 @@ async function run() {
           insecure: true
         },
         (err, summary) => {
-          if (err) return reject(err);
+          if (err) {
+            server.close(() => {
+              console.error("❌ Newman encountered an error:", err.message);
+              reject(err);
+            });
+            return;
+          }
 
+          // --------------------------------------
+          // Handle test failures
+          // --------------------------------------
           if (summary.run.failures.length > 0) {
             console.error("❌ Test failures detected:");
             summary.run.failures.forEach(f => {
               console.error(`➡ ${f.source.name}: ${f.error.message}`);
             });
-            return reject(new Error("Test suite failed"));
+
+            server.close(() => {
+              console.log("🛑 Test server stopped after failures.");
+              reject(new Error("Test suite failed"));
+            });
+            return;
           }
 
-          resolve();
+          // --------------------------------------
+          // No failures → success
+          // --------------------------------------
+          server.close(() => {
+            console.log("🛑 Test server stopped.");
+            resolve();
+          });
         }
       );
     });
 
     console.log("✅ All Postman test cases passed!");
-    server.close();
     process.exit(0);
 
   } catch (err) {
     console.error("🔥 Test suite failed:", err.message);
-    server.close();
     process.exit(1);
   }
 }
