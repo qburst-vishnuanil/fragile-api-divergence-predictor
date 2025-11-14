@@ -24,12 +24,12 @@ try {
 
 // GET /users
 export const getUsers = (req, res) => {
-  return res.status(201).json(users);
+  return res.status(200).json(users);
 };
 
 // POST /users
 export const createUser = (req, res) => {
-  const { name , role } = req.body;
+  const { name, role } = req.body;
 
   if (!name || !role) {
     return res.status(400).json({
