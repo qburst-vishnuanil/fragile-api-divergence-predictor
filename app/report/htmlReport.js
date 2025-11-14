@@ -21,7 +21,6 @@ body { font-family: Arial, sans-serif; padding:20px; background:#f5f7fa; color:#
 .low { background:#e6ffe6; color:#008a00; }
 code { background:#eee; padding:3px 6px; border-radius:6px; }
 </style>
-
 </head>
 <body>
 
@@ -40,26 +39,37 @@ code { background:#eee; padding:3px 6px; border-radius:6px; }
     .map(api => {
       const divergences = [];
 
-      // Support LLM v1 (string array)
+      // Supports LLM v1 (basic string list)
       if (Array.isArray(api.divergences)) {
         api.divergences.forEach(msg => {
           const text = typeof msg === "string" ? msg : JSON.stringify(msg);
+
           divergences.push({
             type: "divergence",
             details: text,
-            severity: text.toLowerCase().includes("missing") ? "high" : "medium"
+            severity:
+              text.toLowerCase().includes("missing") ||
+              text.toLowerCase().includes("mismatch")
+                ? "high"
+                : "medium"
           });
         });
       }
 
-      // Support LLM v2 (object array)
+      // Supports LLM v2 (structured objects)
       if (Array.isArray(api.predicted_divergences)) {
         api.predicted_divergences.forEach(div => {
+          const type = div.type || "divergence";
+          const details = div.details || "";
+
           divergences.push({
-            type: div.type || "divergence",
-            details: div.details || "",
-            severity:
-              (div.type || "").toLowerCase().includes("missing") ? "high" : "medium"
+            type,
+            details,
+            severity: ["missing", "mismatch", "error"].some(x =>
+              type.toLowerCase().includes(x)
+            )
+              ? "high"
+              : "medium"
           });
         });
       }
@@ -87,7 +97,6 @@ code { background:#eee; padding:3px 6px; border-radius:6px; }
       </div>`;
     })
     .join("")}
-
 </div>
 
 <div class="card">

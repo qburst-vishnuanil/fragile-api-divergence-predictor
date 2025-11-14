@@ -11,7 +11,7 @@ await fs.mkdir(CACHE_DIR, { recursive: true });
 await fs.mkdir(GENERATED_DIR, { recursive: true });
 
 /* ---------------------------------------------------------
-   🔥 BUILD ADVANCED PROMPT (includes Postman collection)
+   🔥 ADVANCED PROMPT WITH POSTMAN GENERATION
 ------------------------------------------------------------ */
 function buildPrompt(swaggerSummary, codeSummary) {
   return `
@@ -32,47 +32,54 @@ ${codeSummary}
 ========================
 🎯 REQUIRED ANALYSIS
 ========================
-You MUST identify ALL divergence types:
+Identify ALL divergence types:
 - Missing endpoints
 - Extra endpoints
 - Path mismatch
 - Method mismatch
-- Request body mismatches
-- Response schema mismatches
-- Missing required fields
+- Missing request body fields
+- Missing response fields
 - Incorrect types
 - Missing validations
 - Unexpected status codes
+- Schema mismatches
 
 ========================
 🧪 TEST CASE GENERATION
 ========================
 Generate detailed synthetic test cases covering:
 - Positive cases
-- Missing fields
+- Missing required fields
 - Wrong types
 - Invalid path parameters
-- Schema mismatches
-- Missing/extra field validation
+- Schema mismatch cases
+- Boundary conditions
 - Divergence reproduction
 
-========================
-📦 POSTMAN COLLECTION
-========================
-Generate a **Postman Collection v2.1.0 format** that contains ALL generated test cases.
+EVERY test case MUST include:
+- "name"
+- "method"
+- "path"
+- "requestBody" (or null)
+- "expectedStatus" (NEVER null or undefined)
 
-Postman format:
+========================
+📦 POSTMAN COLLECTION (v2.1.0)
+========================
+Generate:
 {
   "info": { "name": "", "schema": "" },
-  "item": [ { "name": "", "request": { ... }, "response": [] } ]
+  "item": [
+    { "name": "", "request": { ... }, "response": [] }
+  ]
 }
 
-The test items you generate MUST reference each divergence scenario.
+Items MUST map 1-to-1 with generated test cases.
 
 ========================
-📤 OUTPUT JSON FORMAT
+📤 STRICT OUTPUT FORMAT
 ========================
-Return ONLY STRICT JSON in this format:
+Return ONLY THIS JSON — no text:
 
 {
   "apis": [...],
@@ -86,19 +93,16 @@ Return ONLY STRICT JSON in this format:
     "high_severity": 0
   }
 }
-
-DO NOT return explanations.
-DO NOT return text.
-STRICT JSON ONLY.
 `;
 }
 
 /* ---------------------------------------------------------
-   JSON extraction helper
+   JSON extractor
 ------------------------------------------------------------ */
 function extractJson(text) {
   const start = text.indexOf("{");
   const end = text.lastIndexOf("}");
+
   if (start === -1 || end === -1)
     throw new Error("No JSON object found in LLM output");
 
@@ -146,7 +150,7 @@ export async function predictDivergences(swaggerSummary, codeSummary, options = 
   }
 
   /* ---------------------------------------------------------
-     Normalise paths
+     Normalize paths from LLM
   ------------------------------------------------------------ */
   if (Array.isArray(parsed.apis)) {
     parsed.apis = parsed.apis.map(api => ({
@@ -156,26 +160,30 @@ export async function predictDivergences(swaggerSummary, codeSummary, options = 
   }
 
   /* ---------------------------------------------------------
-     Determine implemented endpoints
+     Set implemented endpoints
   ------------------------------------------------------------ */
-  let implementedEndpoints = [];
-  try {
-    implementedEndpoints = codeSummary.endpoints;
-  } catch (err) {
-    console.error("Could not parse endpoints from codeSummary.");
-  }
+  const implementedEndpoints = codeSummary.endpoints || [];
 
   parsed.apis = parsed.apis.map(api => {
     const found = implementedEndpoints.some(ep =>
-      ep.method === api.method &&
-      ep.path === api.path
+      ep.method === api.method && ep.path === api.path
     );
 
     return { ...api, implemented: found };
   });
 
   /* ---------------------------------------------------------
-     Save Postman Collection
+     FIX: Ensure every test case has expectedStatus
+  ------------------------------------------------------------ */
+  if (Array.isArray(parsed.test_cases)) {
+    parsed.test_cases = parsed.test_cases.map(tc => ({
+      ...tc,
+      expectedStatus: Number(tc.expectedStatus) || 200
+    }));
+  }
+
+  /* ---------------------------------------------------------
+     Save Postman collection
   ------------------------------------------------------------ */
   if (parsed.postman_collection) {
     const filePath = path.join(GENERATED_DIR, "postman_collection.json");
@@ -205,7 +213,7 @@ export async function predictDivergences(swaggerSummary, codeSummary, options = 
   };
 
   /* ---------------------------------------------------------
-     Save to cache for next run
+     Cache result
   ------------------------------------------------------------ */
   await fs.writeFile(key, JSON.stringify(parsed, null, 2));
 
@@ -213,7 +221,7 @@ export async function predictDivergences(swaggerSummary, codeSummary, options = 
 }
 
 /* ---------------------------------------------------------
-   File existence helper
+   File exists helper
 ------------------------------------------------------------ */
 async function fileExists(p) {
   try {
