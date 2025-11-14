@@ -31,7 +31,7 @@ ${codeSummary}
 
 TASK:
 1) Identify missing endpoints, extra endpoints, path/method mismatches, request/response schema differences, missing required fields, incorrect types, missing validations, unexpected status codes.
-2) Generate synthetic test cases covering positive cases, missing fields, wrong types, invalid path params and schema mismatch reproduction.
+2) Generate synthetic test cases covering positive cases, missing fields, wrong types, invalid path params and schema mismatch reproduction for each APIs.
 3) Generate realistic seed/test data to use during execution (for example: users array). Put this under the key "test_data".
 4) Also produce a Postman Collection (v2.1.0) that maps 1:1 to the test cases.
 
