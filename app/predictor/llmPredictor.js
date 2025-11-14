@@ -17,22 +17,26 @@ function buildPrompt(swaggerSummary, codeSummary) {
   return `
 You are an API Contract Enforcement Engine.
 
-Compare the Swagger API contract with the source code and identify all divergence issues.
+Compare Swagger with the actual API implementation and identify all divergence issues.
 
-For each divergence, return:
-{
-  "type": "",
-  "details": "",
-  "severity": "HIGH" | "MEDIUM" | "LOW"
-}
+Assign SEVERITY for each divergence:
 
-Severity rules:
-- HIGH: missing_endpoint, extra_endpoint, method_mismatch, schema_mismatch
-- MEDIUM: missing_field, type_mismatch, validation_missing
-- LOW: minor differences
+HIGH:
+- missing_endpoint
+- extra_endpoint
+- schema_mismatch
+- method_mismatch
 
-Return STRICT JSON with the structure:
+MEDIUM:
+- missing_field
+- type_mismatch
+- validation_missing
 
+LOW:
+- optional_field_difference
+- minor description mismatch
+
+STRICT JSON OUTPUT:
 {
   "apis": [
       {
@@ -57,7 +61,7 @@ Return STRICT JSON with the structure:
 SWAGGER:
 ${swaggerSummary}
 
-CODE:
+SOURCE CODE:
 ${codeSummary}
 `;
 }
@@ -68,7 +72,11 @@ ${codeSummary}
 function extractJson(text) {
   const start = text.indexOf("{");
   const end = text.lastIndexOf("}");
-  if (start === -1 || end === -1) throw new Error("No JSON found in LLM output");
+
+  if (start === -1 || end === -1) {
+    throw new Error("No JSON found in LLM output");
+  }
+
   return JSON.parse(text.substring(start, end + 1));
 }
 
@@ -83,10 +91,10 @@ function cacheKey(sw, code) {
 }
 
 /* ---------------------------------------------------------
-   SEVERITY FIX FUNCTION
+   SEVERITY MAPPER
 ------------------------------------------------------------ */
-function calculateSeverity(type) {
-  const t = (type || "").toLowerCase();
+function calculateSeverity(type = "") {
+  const t = type.toLowerCase();
 
   if (
     t.includes("missing_endpoint") ||
@@ -111,68 +119,87 @@ export async function predictDivergences(swaggerSummary, codeSummary, options = 
   const rawCode = codeSummary?.raw || "";
   const key = cacheKey(swaggerSummary, rawCode);
 
+  // Use cache unless force = true
   if (!options.force && await fileExists(key)) {
     return JSON.parse(await fs.readFile(key, "utf8"));
   }
 
   const prompt = buildPrompt(
     swaggerSummary,
-    `${rawCode}\n\nDetected Endpoints:\n${JSON.stringify(
-      codeSummary?.endpoints || [],
-      null,
-      2
-    )}`
+    `${rawCode}\n\nDetected Endpoints:\n${JSON.stringify(codeSummary.endpoints || [], null, 2)}`
   );
 
-  const raw = await generateFromGemini(prompt, {
+  const llmRaw = await generateFromGemini(prompt, {
     temperature: 0.0,
     maxOutputTokens: 3000,
   });
 
-  if (!raw) throw new Error("Gemini returned empty output");
+  if (!llmRaw) throw new Error("Gemini returned empty output");
 
-  let parsed = extractJson(raw);
+  let parsed = extractJson(llmRaw);
 
   /* ---------------------------------------------------------
-     NORMALIZE apis
+     Normalize API entries
   ------------------------------------------------------------ */
   parsed.apis = (parsed.apis || []).map(api => {
     const method = (api.method || "GET").toUpperCase();
-    const pathVal = api.path ? normalizePath(api.path) : api.path;
+    const pathVal = normalizePath(api.path || "");
 
-    const divs = Array.isArray(api.predicted_divergences)
-      ? api.predicted_divergences.map(d => ({
-          ...d,
-          severity: d.severity || calculateSeverity(d.type)
+    const divergences = Array.isArray(api.predicted_divergences)
+      ? api.predicted_divergences.map(div => ({
+          ...div,
+          severity: div.severity || calculateSeverity(div.type)
         }))
       : [];
 
-    return { ...api, method, path: pathVal, predicted_divergences: divs };
+    return {
+      ...api,
+      method,
+      path: pathVal,
+      predicted_divergences: divergences
+    };
   });
 
   /* ---------------------------------------------------------
-     SUMMARY calculation
+     Attach `implemented = true/false` based on scanned code
   ------------------------------------------------------------ */
-  const allDivergences = parsed.apis.flatMap(a => a.predicted_divergences || []);
+  const implementedEndpoints = codeSummary.endpoints || [];
 
+  parsed.apis = parsed.apis.map(api => {
+    const found = implementedEndpoints.some(
+      ep => ep.method === api.method && normalizePath(ep.path) === api.path
+    );
+
+    return { ...api, implemented: found };
+  });
+
+  /* ---------------------------------------------------------
+     Severity Summary Calculation
+  ------------------------------------------------------------ */
+  const all = parsed.apis.flatMap(api => api.predicted_divergences);
   parsed.summary = {
     total_apis: parsed.apis.length,
-    high_severity: allDivergences.filter(d => d.severity === "HIGH").length,
-    medium_severity: allDivergences.filter(d => d.severity === "MEDIUM").length,
-    low_severity: allDivergences.filter(d => d.severity === "LOW").length,
+    high_severity: all.filter(d => d.severity === "HIGH").length,
+    medium_severity: all.filter(d => d.severity === "MEDIUM").length,
+    low_severity: all.filter(d => d.severity === "LOW").length
   };
 
   /* ---------------------------------------------------------
-     Normalize test cases
+     Normalize Test Cases
   ------------------------------------------------------------ */
   parsed.test_cases = (parsed.test_cases || []).map(tc => {
     const method = (tc.method || "GET").toUpperCase();
-    const pathVal = tc.path ? normalizePath(tc.path) : "/";
+    const pathVal = normalizePath(tc.path || "/");
 
     const expected = Number(tc.expectedStatus) ||
       (method === "POST" ? 201 : 200);
 
-    return { ...tc, method, path: pathVal, expectedStatus: expected };
+    return {
+      ...tc,
+      method,
+      path: pathVal,
+      expectedStatus: expected
+    };
   });
 
   /* ---------------------------------------------------------
@@ -184,23 +211,28 @@ export async function predictDivergences(swaggerSummary, codeSummary, options = 
   }
 
   /* ---------------------------------------------------------
-     Save test data
+     Save Test Data
   ------------------------------------------------------------ */
   if (parsed.test_data) {
     const tdPath = path.join(GENERATED_DIR, "testData.json");
     await fs.writeFile(tdPath, JSON.stringify(parsed.test_data, null, 2));
   }
 
-  // Cache the result
+  /* ---------------------------------------------------------
+     Cache and return
+  ------------------------------------------------------------ */
   await fs.writeFile(key, JSON.stringify(parsed, null, 2));
-
   return parsed;
 }
 
-/* -----------------------------------------------------------
-   File exists helper
-------------------------------------------------------------*/
+/* ---------------------------------------------------------
+   File exists checker
+------------------------------------------------------------ */
 async function fileExists(p) {
-  try { await fs.access(p); return true; }
-  catch { return false; }
+  try {
+    await fs.access(p);
+    return true;
+  } catch {
+    return false;
+  }
 }

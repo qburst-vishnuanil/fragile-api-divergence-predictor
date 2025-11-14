@@ -5,6 +5,13 @@ export async function generateHTMLReport(data, outputPath = "report.html") {
   const apis = data.apis || [];
   const test_cases = data.test_cases || [];
 
+  function badge(sev) {
+    sev = (sev || "LOW").toUpperCase();
+    if (sev === "HIGH") return `<span class="badge high">HIGH</span>`;
+    if (sev === "MEDIUM") return `<span class="badge medium">MEDIUM</span>`;
+    return `<span class="badge low">LOW</span>`;
+  }
+
   const html = `<!doctype html>
 <html>
 <head>
@@ -29,91 +36,53 @@ code { background:#eee; padding:3px 6px; border-radius:6px; }
 <div class="card">
   <h2>Summary</h2>
   <p>Total APIs: ${apis.length}</p>
-  <p>Total Test Cases: ${test_cases.length}</p>
+  <p>High Severity: ${data.summary?.high_severity || 0}</p>
+  <p>Medium Severity: ${data.summary?.medium_severity || 0}</p>
+  <p>Low Severity: ${data.summary?.low_severity || 0}</p>
 </div>
 
 <div class="card">
   <h2>Endpoints Analysis</h2>
 
-  ${apis
-    .map(api => {
-      const divergences = [];
+  ${apis.map(api => {
+      const list = api.predicted_divergences || [];
 
-      // Supports LLM v1 (basic string list)
-      if (Array.isArray(api.divergences)) {
-        api.divergences.forEach(msg => {
-          const text = typeof msg === "string" ? msg : JSON.stringify(msg);
-
-          divergences.push({
-            type: "divergence",
-            details: text,
-            severity:
-              text.toLowerCase().includes("missing") ||
-              text.toLowerCase().includes("mismatch")
-                ? "high"
-                : "medium"
-          });
-        });
-      }
-
-      // Supports LLM v2 (structured objects)
-      if (Array.isArray(api.predicted_divergences)) {
-        api.predicted_divergences.forEach(div => {
-          const type = div.type || "divergence";
-          const details = div.details || "";
-
-          divergences.push({
-            type,
-            details,
-            severity: ["missing", "mismatch", "error"].some(x =>
-              type.toLowerCase().includes(x)
-            )
-              ? "high"
-              : "medium"
-          });
-        });
-      }
+      const divergenceHtml =
+        list.length === 0
+          ? `<div>✅ No divergences</div>`
+          : list
+              .map(d => `
+                <div>
+                  ${badge(d.severity)}
+                  ${d.details}
+                </div>
+              `)
+              .join("");
 
       return `
-      <div class="endpoint">
-        <strong>${api.method} <code>${api.path}</code></strong><br>
-        Implemented: ${api.implemented ? "✔️" : "❌"}<br>
-        <strong>Divergences:</strong>
-
-        ${
-          divergences.length === 0
-            ? <div>✅ No divergences</div>
-            : divergences
-                .map(
-                  d => `
-          <div>
-            <span class="badge ${d.severity}">${d.severity.toUpperCase()}</span>
-            ${d.details}
-          </div>
-        `
-                )
-                .join("")
-        }
-      </div>`;
-    })
-    .join("")}
+        <div class="endpoint">
+          <strong>${api.method} <code>${api.path}</code></strong><br>
+          Implemented: ${api.implemented ? "✔️" : "❌"}<br>
+          ${divergenceHtml}
+        </div>
+      `;
+    }).join("")}
 </div>
 
 <div class="card">
   <h2>Test Cases</h2>
   ${
     test_cases.length === 0
-      ? <p>No test cases generated.</p>
+      ? `<p>No test cases generated.</p>`
       : test_cases
-          .map(
-            tc => `
-      <div class="endpoint">
-        <strong>${tc.name}</strong><br>
-        ${tc.method} <code>${tc.path}</code><br>
-        Expected Status: ${tc.expectedStatus}<br>
-        Payload: <code>${JSON.stringify(tc.requestBody)}</code>
-      </div>`
-          )
+          .map(tc => `
+            <div class="endpoint">
+              <strong>${tc.name}</strong><br>
+              ${tc.method} <code>${tc.path}</code><br>
+              Expected Status: ${tc.expectedStatus}<br>
+              Payload: <code>${JSON.stringify(tc.requestBody)}</code>
+            </div>
+          `)
           .join("")
   }
 </div>
