@@ -18,13 +18,6 @@ jobs:
         with:
           node-version: 20
 
-      - name: Upload HTML Report
-        uses: actions/upload-artifact@v3
-        with:
-          name: divergence-test-report
-          path: generated/test-report.html
-
-
       - name: Install dependencies
         run: npm install
 
