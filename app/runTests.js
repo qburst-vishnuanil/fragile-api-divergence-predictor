@@ -1,34 +1,65 @@
 // app/runTests.js
+import path from "path";
+import fs from "fs/promises";
 import { startServer } from "./server.js";
 import newman from "newman";
 
 async function run() {
-  console.log("🔧 Starting API test server...");
+  console.log("🔧 Starting temporary API server...");
 
-  const server = await startServer();
+  let server;
+  try {
+    server = await startServer();
+  } catch (err) {
+    console.error("❌ Failed to start API server:", err.message);
+    process.exit(1);
+  }
 
-  console.log("🧪 Running Postman tests...");
+  const collectionPath = path.resolve("generated/postman_collection.json");
 
+  // --------------------------------------
+  // Ensure collection exists
+  // --------------------------------------
+  try {
+    await fs.access(collectionPath);
+  } catch {
+    console.error("❌ Postman collection not found:", collectionPath);
+    console.error("Run `node app/index.js` first to generate it.");
+    server.close();
+    process.exit(1);
+  }
+
+  console.log("🧪 Running Postman tests on:", collectionPath);
+
+  // --------------------------------------
+  // Execute Newman programmatically
+  // --------------------------------------
   try {
     await new Promise((resolve, reject) => {
       newman.run(
         {
-          collection: "generated/postman_collection.json",
-          reporters: "cli"
+          collection: collectionPath,
+          reporters: "cli",
+          timeoutRequest: 10000,
+          insecure: true
         },
         (err, summary) => {
           if (err) return reject(err);
+
           if (summary.run.failures.length > 0) {
             console.error("❌ Test failures detected:");
-            console.error(summary.run.failures);
+            summary.run.failures.forEach(f => {
+              console.error(`➡ ${f.source.name}: ${f.error.message}`);
+            });
             return reject(new Error("Test suite failed"));
           }
+
           resolve();
         }
       );
     });
 
-    console.log("✅ All tests passed!");
+    console.log("✅ All Postman test cases passed!");
     server.close();
     process.exit(0);
 
