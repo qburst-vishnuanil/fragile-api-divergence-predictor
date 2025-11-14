@@ -20,7 +20,7 @@ You are an API Contract Enforcement Engine.
 Your tasks:
 
 1. Compare the Swagger API contract with the SOURCE CODE implementation.
-2. Identify *ALL* divergence issues across:
+2. Identify ALL divergence issues across:
    - missing endpoints
    - extra endpoints
    - method mismatch
@@ -32,12 +32,10 @@ Your tasks:
    - documentation inconsistencies
 3. For EVERY divergence, generate the negative-test case that REPRODUCES the issue.
 4. Also generate VALID (positive) test cases for every API defined in Swagger.
-5. Return ALL APIs (both present in Swagger and source code) in the output.
-6. Assign severity based on this rule:
+5. Return ALL APIs (both present in Swagger and source code).
+6. Assign severity based on:
 
-===============================
-📌 DIVERGENCE SEVERITY RULES
-===============================
+=== DIVERGENCE SEVERITY RULES ===
 
 HIGH severity:
 - missing_endpoint
@@ -54,29 +52,37 @@ LOW severity:
 - optional_field_difference
 - minor_doc_mismatch
 
-===============================
-📌 TEST CASE GENERATION RULES
-===============================
+=== 🔥 ADDITIONAL RULES (IMPORTANT) ===
+You MUST deeply analyze the SOURCE CODE logic, including:
 
-You MUST generate test cases for BOTH:
-✔ Positive flow (valid API behavior)
-✔ Negative flow (divergence reproduction)
+- Check destructured body fields vs what is used.
+- Detect variables used but NEVER defined (e.g., \`role\` not destructured).
+- Detect returned object fields that Swagger does NOT define.
+- Detect missing validation even if a conditional is present but wrong.
+- Detect incorrect response structure (extra or missing fields).
+- Detect if required Swagger fields are NOT validated in source.
 
-For EACH divergence type:
+The LLM must treat these as **real divergence cases**.
 
-- missing_endpoint → create a test calling the endpoint expecting **404**
-- extra_endpoint → test the endpoint expecting **404** (not defined in Swagger)
-- method_mismatch → call the incorrect method → expect **405 or 404**
-- schema_mismatch → send wrong schema → expect **400**
-- missing_field → request missing field → expect **400**
-- type_mismatch → send incorrect type → expect **400**
-- validation_missing → send invalid input → expect **400**
+=== TEST CASE GENERATION RULES ===
 
-===============================
-📌 STRICT JSON OUTPUT FORMAT
-===============================
+You MUST generate test cases for BOTH positive and negative flows.
 
-Respond ONLY with a valid JSON object:
+For EACH divergence:
+
+- missing_endpoint → 404 expected
+- extra_endpoint → 404 expected
+- method_mismatch → 404/405 expected
+- schema_mismatch → invalid body → 400
+- missing_field → missing required → 400
+- type_mismatch → wrong data type → 400
+- validation_missing → invalid request → 400
+
+Additionally:
+- For missing destructured fields (e.g., \`role\` not extracted), generate a negative test:
+  → send request with correct fields and detect failure due to undefined variable.
+
+=== STRICT JSON OUTPUT FORMAT ===
 
 {
   "apis": [
@@ -100,27 +106,15 @@ Respond ONLY with a valid JSON object:
         "expectedStatus": 200 
       }
   ],
-  "postman_collection": { },
-  "test_data": { },
-  "summary": { 
-      "total_apis": 0 
-  }
+  "postman_collection": {},
+  "test_data": {},
+  "summary": { "total_apis": 0 }
 }
 
-===============================
-📌 INPUT DATA
-===============================
-
-SWAGGER CONTRACT:
-{{swaggerSummary}}
-
-SOURCE CODE:
-{{codeSummary}}
-
-SWAGGER:
+=== SWAGGER CONTRACT ===
 ${swaggerSummary}
 
-SOURCE CODE:
+=== SOURCE CODE ===
 ${codeSummary}
 `;
 }
