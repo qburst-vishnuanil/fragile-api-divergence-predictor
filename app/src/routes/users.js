@@ -16,4 +16,7 @@ router.post("/users", createUser);
 // GET /users/:id
 router.get("/users/:id", getUserById);
 
+// GET /order
+router.get("/order", getOrder);
+
 export default router;

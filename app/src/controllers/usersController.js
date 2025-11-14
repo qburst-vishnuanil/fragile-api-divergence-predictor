@@ -5,6 +5,7 @@ import path from "path";
 const TEST_DATA_PATH = path.resolve("generated/testData.json");
 
 let users = [];
+let orders = [];
 
 // Attempt to load generated test data at startup
 try {
@@ -12,7 +13,8 @@ try {
     const raw = fs.readFileSync(TEST_DATA_PATH, "utf8");
     const json = JSON.parse(raw);
     users = Array.isArray(json.users) ? json.users.slice() : [];
-    console.log(`📦 Loaded ${users.length} users from ${TEST_DATA_PATH}`);
+    orders = Array.isArray(json.orders) ? [...json.orders] : [];
+    console.log(`📦 Loaded ${users.length} users and ${orders.length} orders from ${TEST_DATA_PATH}`);
   } else {
     users = [];
     console.log("⚠️ No generated/testData.json found — starting with empty users array.");
@@ -59,3 +61,8 @@ export const getUserById = (req, res) => {
 
   return res.status(200).json(user);
 };
+
+//GET /order
+export const getOrder = (req,res) => {
+    return res.status(200).json(ordernum);
+}
