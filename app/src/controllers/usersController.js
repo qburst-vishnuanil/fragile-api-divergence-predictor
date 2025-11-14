@@ -36,7 +36,7 @@ export const createUser = (req, res) => {
 
   if (!name || !role) {
     return res.status(400).json({
-      error: "name and role are required"
+      error: "name and role are required "
     });
   }
 
