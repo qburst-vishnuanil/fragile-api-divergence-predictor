@@ -5,23 +5,25 @@ import { loadCodeSummary } from "./loader/codeLoader.js";
 import { predictDivergences } from "./predictor/llmPredictor.js";
 import { generateHTMLReport } from "./report/htmlReport.js";
 import { generatePostmanCollection } from "./report/postmanGenerator.js";
+import fs from "fs/promises";
+import path from "path";
 
 async function run() {
   try {
     console.log("📘 Loading swagger...");
     const swagger = loadSwagger("./swagger/swagger.yaml");
-    console.log("Swagger summary length:", swagger.summary.length);
+    console.log("Swagger summary length:", JSON.stringify(swagger.summary).length);
 
     console.log("📂 Scanning source code (./app/src)...");
     const code = await loadCodeSummary("./app/src");
-    console.log("Code summary length:", code.summary.length);
+    console.log("Code summary endpoints:", (code.endpoints || []).length);
 
     // ----------------------------------------
     // CASE 1: No source code found → initial commit
     // ----------------------------------------
-    if (code.endpoints.length === 0) {
+    if (!Array.isArray(code.endpoints) || code.endpoints.length === 0) {
       console.log("⚠️ No source code found. Skipping divergence prediction.");
-      
+
       const emptyReport = {
         apis: [],
         test_cases: [],
@@ -58,7 +60,7 @@ async function run() {
 
     console.log("📦 Generating Postman Test Suite...");
     await generatePostmanCollection(
-      analysis.test_cases,
+      analysis.test_cases || [],
       "generated/postman_collection.json"
     );
 

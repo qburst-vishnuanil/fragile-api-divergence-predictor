@@ -11,7 +11,7 @@ await fs.mkdir(CACHE_DIR, { recursive: true });
 await fs.mkdir(GENERATED_DIR, { recursive: true });
 
 /* ---------------------------------------------------------
-   🔥 ADVANCED PROMPT WITH POSTMAN GENERATION
+   ADVANCED PROMPT WITH POSTMAN & TEST DATA GENERATION
 ------------------------------------------------------------ */
 function buildPrompt(swaggerSummary, codeSummary) {
   return `
@@ -20,78 +20,29 @@ You are an API Contract Enforcement Engine.
 Your job is to compare the Swagger API contract with the source code implementation and detect ALL contract divergence issues.
 
 ========================
-📘 SWAGGER CONTRACT
+SWAGGER CONTRACT
 ========================
 ${swaggerSummary}
 
 ========================
-💻 SOURCE CODE IMPLEMENTATION
+SOURCE CODE
 ========================
 ${codeSummary}
 
-========================
-🎯 REQUIRED ANALYSIS
-========================
-Identify ALL divergence types:
-- Missing endpoints
-- Extra endpoints
-- Path mismatch
-- Method mismatch
-- Missing request body fields
-- Missing response fields
-- Incorrect types
-- Missing validations
-- Unexpected status codes
-- Schema mismatches
+TASK:
+1) Identify missing endpoints, extra endpoints, path/method mismatches, request/response schema differences, missing required fields, incorrect types, missing validations, unexpected status codes.
+2) Generate synthetic test cases covering positive cases, missing fields, wrong types, invalid path params and schema mismatch reproduction.
+3) Generate realistic seed/test data to use during execution (for example: users array). Put this under the key "test_data".
+4) Also produce a Postman Collection (v2.1.0) that maps 1:1 to the test cases.
 
-========================
-🧪 TEST CASE GENERATION
-========================
-Generate detailed synthetic test cases covering:
-- Positive cases
-- Missing required fields
-- Wrong types
-- Invalid path parameters
-- Schema mismatch cases
-- Boundary conditions
-- Divergence reproduction
-
-EVERY test case MUST include:
-- "name"
-- "method"
-- "path"
-- "requestBody" (or null)
-- "expectedStatus" (NEVER null or undefined)
-
-========================
-📦 POSTMAN COLLECTION (v2.1.0)
-========================
-Generate:
-{
-  "info": { "name": "", "schema": "" },
-  "item": [
-    { "name": "", "request": { ... }, "response": [] }
-  ]
-}
-
-Items MUST map 1-to-1 with generated test cases.
-
-========================
-📤 STRICT OUTPUT FORMAT
-========================
-Return ONLY THIS JSON — no text:
+STRICT OUTPUT FORMAT (return only JSON, no explanation):
 
 {
-  "apis": [...],
-  "test_cases": [...],
+  "apis": [ { "path":"", "method":"", "expected_request_fields":[], "expected_response_fields":[], "required_fields":[], "predicted_divergences":[ { "type":"", "details":"" } ] } ],
+  "test_cases": [ { "name":"", "method":"", "path":"", "requestBody": null, "expectedStatus": 200 } ],
   "postman_collection": { ... },
-  "summary": {
-    "total_apis": 0,
-    "missing_endpoints": 0,
-    "extra_endpoints": 0,
-    "schema_mismatch": 0,
-    "high_severity": 0
-  }
+  "test_data": { ... },
+  "summary": { "total_apis": 0, "missing_endpoints": 0, "extra_endpoints": 0, "schema_mismatch": 0, "high_severity": 0 }
 }
 `;
 }
@@ -102,10 +53,7 @@ Return ONLY THIS JSON — no text:
 function extractJson(text) {
   const start = text.indexOf("{");
   const end = text.lastIndexOf("}");
-
-  if (start === -1 || end === -1)
-    throw new Error("No JSON object found in LLM output");
-
+  if (start === -1 || end === -1) throw new Error("No JSON object found in LLM output");
   return JSON.parse(text.substring(start, end + 1));
 }
 
@@ -120,10 +68,12 @@ function cacheKey(sw, code) {
 }
 
 /* ---------------------------------------------------------
-   MAIN: Predict divergences + generate test suite
+   MAIN: Predict divergences + generate test suite + test data
 ------------------------------------------------------------ */
 export async function predictDivergences(swaggerSummary, codeSummary, options = {}) {
-  const key = cacheKey(swaggerSummary, codeSummary.raw);
+  // codeSummary may be the object returned by loadCodeSummary (with raw and endpoints)
+  const rawCode = codeSummary?.raw || (typeof codeSummary === "string" ? codeSummary : "");
+  const key = cacheKey(swaggerSummary, rawCode);
 
   if (!options.force && await fileExists(key)) {
     return JSON.parse(await fs.readFile(key, "utf8"));
@@ -131,7 +81,7 @@ export async function predictDivergences(swaggerSummary, codeSummary, options = 
 
   const prompt = buildPrompt(
     swaggerSummary,
-    `${codeSummary.raw}\n\nDetected Endpoints:\n${codeSummary.summary}`
+    `${rawCode}\n\nDetected Endpoints:\n${JSON.stringify(codeSummary?.endpoints || [], null, 2)}`
   );
 
   const raw = await generateFromGemini(prompt, {
@@ -149,41 +99,48 @@ export async function predictDivergences(swaggerSummary, codeSummary, options = 
     throw err;
   }
 
+  // ensure structures
+  parsed.apis = Array.isArray(parsed.apis) ? parsed.apis : [];
+  parsed.test_cases = Array.isArray(parsed.test_cases) ? parsed.test_cases : [];
+  parsed.postman_collection = parsed.postman_collection || null;
+  parsed.test_data = parsed.test_data || parsed.seed_data || null;
+  parsed.summary = parsed.summary || {};
+
   /* ---------------------------------------------------------
      Normalize paths from LLM
   ------------------------------------------------------------ */
-  if (Array.isArray(parsed.apis)) {
-    parsed.apis = parsed.apis.map(api => ({
-      ...api,
-      path: normalizePath(api.path)
-    }));
-  }
+  parsed.apis = parsed.apis.map(api => ({
+    ...api,
+    path: api.path ? normalizePath(api.path) : api.path
+  }));
 
   /* ---------------------------------------------------------
-     Set implemented endpoints
+     Set implemented endpoints using codeSummary.endpoints
   ------------------------------------------------------------ */
-  const implementedEndpoints = codeSummary.endpoints || [];
+  const implementedEndpoints = Array.isArray(codeSummary?.endpoints) ? codeSummary.endpoints : [];
 
   parsed.apis = parsed.apis.map(api => {
+    const apiMethod = (api.method || "").toUpperCase();
+    const apiPath = normalizePath(api.path || "");
     const found = implementedEndpoints.some(ep =>
-      ep.method === api.method && ep.path === api.path
+      (ep.method || "").toUpperCase() === apiMethod && normalizePath(ep.path || "") === apiPath
     );
-
-    return { ...api, implemented: found };
+    return { ...api, method: apiMethod, path: apiPath, implemented: found };
   });
 
   /* ---------------------------------------------------------
-     FIX: Ensure every test case has expectedStatus
+     Ensure every test case has expectedStatus and normalized path/method
   ------------------------------------------------------------ */
-  if (Array.isArray(parsed.test_cases)) {
-    parsed.test_cases = parsed.test_cases.map(tc => ({
-      ...tc,
-      expectedStatus: Number(tc.expectedStatus) || 200
-    }));
-  }
+  parsed.test_cases = parsed.test_cases.map(tc => {
+    const method = (tc.method || "GET").toUpperCase();
+    const pathVal = tc.path ? normalizePath(tc.path) : (tc.path || "/");
+    // enforce expectedStatus fallback sensible defaults
+    const expectedStatus = Number(tc.expectedStatus) || (method === "POST" ? 201 : 200);
+    return { ...tc, method, path: pathVal, expectedStatus };
+  });
 
   /* ---------------------------------------------------------
-     Save Postman collection
+     Save Postman collection (if LLM returned one)
   ------------------------------------------------------------ */
   if (parsed.postman_collection) {
     const filePath = path.join(GENERATED_DIR, "postman_collection.json");
@@ -192,29 +149,34 @@ export async function predictDivergences(swaggerSummary, codeSummary, options = 
   }
 
   /* ---------------------------------------------------------
-     Build summary
+     Save test data (if LLM returned test_data or seed_data)
+  ------------------------------------------------------------ */
+  if (parsed.test_data) {
+    const tdPath = path.join(GENERATED_DIR, "testData.json");
+    try {
+      await fs.writeFile(tdPath, JSON.stringify(parsed.test_data, null, 2));
+      console.log(`📦 Test data saved → ${tdPath}`);
+    } catch (err) {
+      console.error("❌ Failed to save test data:", err);
+    }
+  } else {
+    // if LLM did not return test_data, but there are test cases, try to derive minimal data:
+    // (not required but safe) — skip for now.
+  }
+
+  /* ---------------------------------------------------------
+     Build/augment summary
   ------------------------------------------------------------ */
   parsed.summary = {
     total_apis: parsed.apis.length,
-    missing_endpoints: parsed.apis.filter(a =>
-      a.predicted_divergences?.some(d => d.type === "missing_endpoint")
-    ).length,
-    extra_endpoints: parsed.apis.filter(a =>
-      a.predicted_divergences?.some(d => d.type === "extra_endpoint")
-    ).length,
-    schema_mismatch: parsed.apis.filter(a =>
-      a.predicted_divergences?.some(d => d.type === "schema_mismatch")
-    ).length,
-    high_severity: parsed.apis.filter(a =>
-      a.predicted_divergences?.some(d =>
-        ["missing_endpoint", "schema_mismatch", "method_mismatch"].includes(d.type)
-      )
-    ).length
+    missing_endpoints: parsed.apis.filter(a => a.predicted_divergences?.some(d => d.type === "missing_endpoint")).length,
+    extra_endpoints: parsed.apis.filter(a => a.predicted_divergences?.some(d => d.type === "extra_endpoint")).length,
+    schema_mismatch: parsed.apis.filter(a => a.predicted_divergences?.some(d => d.type === "schema_mismatch")).length,
+    high_severity: parsed.apis.filter(a => a.predicted_divergences?.some(d => ["missing_endpoint", "schema_mismatch", "method_mismatch"].includes(d.type))).length,
+    ...parsed.summary
   };
 
-  /* ---------------------------------------------------------
-     Cache result
-  ------------------------------------------------------------ */
+  // Save to cache
   await fs.writeFile(key, JSON.stringify(parsed, null, 2));
 
   return parsed;

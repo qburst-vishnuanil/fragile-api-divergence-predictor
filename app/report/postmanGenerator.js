@@ -11,27 +11,25 @@ export async function generatePostmanCollection(
   console.log(`📦 Preparing Postman collection with ${testCases.length} test cases...`);
 
   function inferStatus(tc) {
-    // 1️⃣ If LLM provided expected status → use it
-    if (tc.expectedStatus && Number(tc.expectedStatus) > 0) {
+    // 1️⃣ Use explicit expectedStatus if valid
+    if (tc && tc.expectedStatus && Number(tc.expectedStatus) > 0) {
       return Number(tc.expectedStatus);
     }
 
-    // 2️⃣ Infer NEGATIVE test cases
-    const name = tc.name?.toLowerCase() || "";
-
-    if (name.includes("missing") || name.includes("invalid") || name.includes("error")) {
-      return 400; // Bad Request
+    // 2️⃣ Negative keywords
+    const name = (tc?.name || "").toLowerCase();
+    if (name.includes("missing") || name.includes("invalid") || name.includes("error") || name.includes("not found")) {
+      return 400;
     }
 
-    // 3️⃣ Infer based on HTTP method
-    const method = tc.method?.toUpperCase() || "GET";
-
+    // 3️⃣ Based on HTTP method
+    const method = (tc?.method || "GET").toUpperCase();
     if (method === "GET") return 200;
     if (method === "POST") return 201;
-    if (method === "PUT") return 200;
+    if (method === "PUT" || method === "PATCH") return 200;
     if (method === "DELETE") return 204;
 
-    // 4️⃣ Default fallback (safe)
+    // default
     return 200;
   }
 
@@ -45,17 +43,18 @@ export async function generatePostmanCollection(
     },
 
     item: testCases.map(tc => {
+      const method = (tc.method || "GET").toUpperCase();
       const status = inferStatus(tc);
 
       return {
-        name: tc.name || `${tc.method} ${tc.path}`,
+        name: tc.name || `${method} ${tc.path}`,
         request: {
-          method: tc.method?.toUpperCase() || "GET",
+          method,
           header: [{ key: "Content-Type", value: "application/json" }],
           url: {
             raw: `{{baseUrl}}${tc.path}`,
             host: ["{{baseUrl}}"],
-            path: tc.path.replace(/^\//, "").split("/")
+            path: tc.path ? tc.path.replace(/^\//, "").split("/") : []
           },
           body: tc.requestBody
             ? {
