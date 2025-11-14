@@ -63,7 +63,7 @@ export const getUserById = (req, res) => {
   return res.status(200).json(user);
 };
 
-//GET /order api
+//GET /order
 export const getOrder = (req,res) => {
     return res.status(200).json(ordernum);
 }
