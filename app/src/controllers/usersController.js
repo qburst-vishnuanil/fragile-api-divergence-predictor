@@ -24,7 +24,7 @@ try {
 
 // GET /users
 export const getUsers = (req, res) => {
-  return res.status(200).json(users);
+  return res.status(201).json(users);
 };
 
 // POST /users
