@@ -65,5 +65,5 @@ export const getUserById = (req, res) => {
 
 //GET /order
 export const getOrder = (req,res) => {
-    return res.status(200).json(order_no);
+    return res.status(200).json(orders);
 }
