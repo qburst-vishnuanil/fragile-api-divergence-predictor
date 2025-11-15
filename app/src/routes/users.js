@@ -1,10 +1,10 @@
-// import express from "express";
-// import { 
-//   getUsers,
-//   createUser,
-//   getUserById,
-//   getOrder
-// } from "../controllers/usersController.js";
+import express from "express";
+import { 
+  getUsers,
+  createUser,
+  getUserById,
+  getOrder
+} from "../controllers/usersController.js";
 
 // const router = express.Router();
 
@@ -20,4 +20,4 @@
 // // GET /order
 // router.get("/order", getOrder);
 
-// export default router;
+export default router;
