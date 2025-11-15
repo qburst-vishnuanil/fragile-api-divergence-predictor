@@ -18,7 +18,7 @@ try {
     console.log(`📦 Loaded ${users.length} users and ${orders.length} orders from ${TEST_DATA_PATH}`);
   } else {
     users = [];
-    console.log("⚠️ No generated/testData.json found — starting with empty users array. ");
+    console.log("⚠️ No generated/testData.json found — starting with empty users array.");
   }
 } catch (err) {
   console.error("❌ Error loading testData.json:", err);
