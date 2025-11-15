@@ -1,23 +1,23 @@
-import express from "express";
-import { 
-  getUsers,
-  createUser,
-  getUserById,
-  getOrder
-} from "../controllers/usersController.js";
+// import express from "express";
+// import { 
+//   getUsers,
+//   createUser,
+//   getUserById,
+//   getOrder
+// } from "../controllers/usersController.js";
 
-const router = express.Router();
+// const router = express.Router();
 
-// GET /users
-router.get("/users", getUsers);
+// // GET /users
+// router.get("/users", getUsers);
 
-// POST /users
-router.post("/users", createUser);
+// // POST /users
+// router.post("/users", createUser);
 
-// GET /users/:id
-router.get("/users/:id", getUserById);
+// // GET /users/:id
+// router.get("/users/:id", getUserById);
 
-// GET /order
-router.get("/order", getOrder);
+// // GET /order
+// router.get("/order", getOrder);
 
-export default router;
+// export default router;
