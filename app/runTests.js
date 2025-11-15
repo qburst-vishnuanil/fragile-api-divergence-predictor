@@ -17,7 +17,7 @@ async function run() {
 
   const collectionPath = path.resolve("generated/postman_collection.json");
 
-  // --------------------------------------
+  // ---------------------------------------
   // Ensure Postman collection exists
   // --------------------------------------
   try {
