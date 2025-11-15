@@ -11,7 +11,7 @@ const router = express.Router();
 // GET /users
 router.get("/users", getUsers);
 
-// POST /users
+// POST /userss
 router.post("/users", createUser);
 
 // GET /users/:id
