@@ -47,25 +47,24 @@ code { background:#eee; padding:3px 6px; border-radius:6px; }
   ${apis.map(api => {
       const list = api.predicted_divergences || [];
 
-      return `
-      <div class="endpoint">
-        <strong>${api.method} <code>${api.path}</code></strong><br>
-        Implemented: ${api.implemented ? "✔️" : "❌"}<br>
+      const divergenceHtml =
+        list.length === 0
+          ? `<div>✅ No divergences</div>`
+          : list
+              .map(d => `
+                <div>
+                  ${badge(d.severity)}
+                  ${d.details}
+                </div>
+              `)
+              .join("");
 
-        ${
-          list.length === 0
-            ? `<div>✅ No divergences</div>`
-            : list
-                .map(
-                  d => `
-                  <div>
-                    ${badge(d.severity)}
-                    ${d.details}
-                  </div>`
-                )
-                .join("")
-        }
-      </div>
+      return `
+        <div class="endpoint">
+          <strong>${api.method} <code>${api.path}</code></strong><br>
+          Implemented: ${api.implemented ? "✔️" : "❌"}<br>
+          ${divergenceHtml}
+        </div>
       `;
     }).join("")}
 </div>
@@ -82,8 +81,8 @@ code { background:#eee; padding:3px 6px; border-radius:6px; }
               ${tc.method} <code>${tc.path}</code><br>
               Expected Status: ${tc.expectedStatus}<br>
               Payload: <code>${JSON.stringify(tc.requestBody)}</code>
-            </div>`
-          )
+            </div>
+          `)
           .join("")
   }
 </div>

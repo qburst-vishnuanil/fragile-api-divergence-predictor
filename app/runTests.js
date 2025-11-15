@@ -18,7 +18,7 @@ async function run() {
   const collectionPath = path.resolve("generated/postman_collection.json");
 
   // --------------------------------------
-  // Ensure collection exists
+  // Ensure Postman collection exists
   // --------------------------------------
   try {
     await fs.access(collectionPath);
@@ -31,36 +31,63 @@ async function run() {
 
   console.log("🧪 Running Postman tests on:", collectionPath);
 
-  // --------------------------------------
-  // Execute Newman programmatically
-  // --------------------------------------
   try {
     await new Promise((resolve, reject) => {
-      newman.run({
-    collection: collectionPath,
-    reporters: ['cli', 'htmlextra'],
-    reporter: {
-        htmlextra: {
-            export: 'generated/test-report.html',
-            logs: true,
-            browserTitle: "API Divergence Test Report",
-            title: "AI-Generated Test Execution Results",
-            testPaging: true,
-            showEnvironmentData: true,
-            skipSensitiveData: true
-        }
-    }
-});
+      newman.run(
+        {
+          collection: collectionPath,
 
+          // ⭐ reporters from main branch
+          reporters: ["cli", "htmlextra"],
+          reporter: {
+            htmlextra: {
+              export: "generated/test-report.html",
+              logs: true,
+              browserTitle: "API Divergence Test Report",
+              title: "AI-Generated Test Execution Results",
+              testPaging: true,
+              showEnvironmentData: true,
+              skipSensitiveData: true
+            }
+          },
+
+          timeoutRequest: 10000,
+          insecure: true
+        },
+
+        (err, summary) => {
+          if (err) {
+            return server.close(() => {
+              console.error("❌ Newman encountered an error:", err.message);
+              reject(err);
+            });
+          }
+
+          if (summary.run.failures.length > 0) {
+            console.error("❌ Test failures detected:");
+            summary.run.failures.forEach(f => {
+              console.error(`➡ ${f.source.name}: ${f.error.message}`);
+            });
+
+            return server.close(() => {
+              console.log("🛑 Test server stopped after failures.");
+              reject(new Error("Test suite failed"));
+            });
+          }
+
+          server.close(() => {
+            console.log("🛑 Test server stopped gracefully.");
+            resolve();
+          });
+        }
+      );
     });
 
     console.log("✅ All Postman test cases passed!");
-    server.close();
     process.exit(0);
 
   } catch (err) {
     console.error("🔥 Test suite failed:", err.message);
-    server.close();
     process.exit(1);
   }
 }

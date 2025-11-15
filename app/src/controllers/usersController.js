@@ -32,11 +32,11 @@ export const getUsers = (req, res) => {
 
 // POST /users
 export const createUser = (req, res) => {
-  const { name, role } = req.body;
+  const { name , role } = req.body;
 
   if (!name || !role) {
     return res.status(400).json({
-      error: "name and role are required"
+      error: "name and role are required "
     });
   }
 
@@ -57,7 +57,7 @@ export const getUserById = (req, res) => {
   const user = users.find(u => u.id === Number(id));
 
   if (!user) {
-    return res.status(404).json({ error: "User not found" });
+    return res.status(404).json({ error: "User not found " });
   }
 
   return res.status(200).json(user);
@@ -65,5 +65,5 @@ export const getUserById = (req, res) => {
 
 //GET /order
 export const getOrder = (req,res) => {
-    return res.status(200).json(ordernum);
+    return res.status(200).json(orders);
 }

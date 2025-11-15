@@ -1,5 +1,6 @@
 // app/index.js
 
+import path from "path";
 import { loadSwagger } from "./loader/swaggerLoader.js";
 import { loadCodeSummary } from "./loader/codeLoader.js";
 import { predictDivergences } from "./predictor/llmPredictor.js";
@@ -12,12 +13,12 @@ async function run() {
     const swagger = loadSwagger("./swagger/swagger.yaml");
     console.log("Swagger summary length:", swagger.summary.length);
 
-    console.log("📂 Scanning source code (./app/src)...");
-    const code = await loadCodeSummary("./app/src");
+    console.log("📂 Scanning source code (app/src)...");
+    const code = await loadCodeSummary("app/src");
     console.log("Code summary endpoints:", code.endpoints.length);
 
     // ---------------------------------------------------------
-    // CASE 1: No source code found → pass CI with empty report
+    // CASE 1: No code found → pass CI
     // ---------------------------------------------------------
     if (code.endpoints.length === 0) {
       console.log("⚠️ No source code found. Skipping divergence prediction.");
@@ -36,15 +37,16 @@ async function run() {
         }
       };
 
-      await generateHTMLReport(emptyReport, "report.html");
+      const REPORT_PATH = path.resolve("report.html");
+      await generateHTMLReport(emptyReport, REPORT_PATH);
       await generatePostmanCollection([], "generated/postman_collection.json");
 
-      console.log("📄 Empty report + empty collection generated.");
+      console.log("📄 Report generated at:", REPORT_PATH);
       process.exit(0);
     }
 
     // ---------------------------------------------------------
-    // CASE 2: Run LLM-driven divergence detection
+    // CASE 2: Run LLM Divergence Prediction
     // ---------------------------------------------------------
     console.log("🔮 Predicting divergences using Gemini...");
     const analysis = await predictDivergences(swagger.summary, code, { force: true });
@@ -56,10 +58,12 @@ async function run() {
     console.log("Low Severity:", analysis.summary.low_severity);
 
     // ---------------------------------------------------------
-    // Generate HTML + Postman Suite
+    // Generate report + postman collection
     // ---------------------------------------------------------
+    const REPORT_PATH = path.resolve("report.html");
     console.log("\n📝 Generating HTML divergence report...");
-    await generateHTMLReport(analysis, "report.html");
+    await generateHTMLReport(analysis, REPORT_PATH);
+    console.log("📄 Report saved:", REPORT_PATH);
 
     console.log("📦 Generating Postman Test Suite...");
     await generatePostmanCollection(
@@ -70,21 +74,20 @@ async function run() {
     console.log("✅ Report & Test Suite generated successfully!");
 
     // ---------------------------------------------------------
-    // EXIT CODE LOGIC (very important)
+    // EXIT CODE LOGIC
     // ---------------------------------------------------------
-
     if (analysis.summary.high_severity > 0) {
       console.log("🚨 HIGH severity divergence found → failing CI.");
-      process.exit(2); // HIGH
+      process.exit(2);
     }
 
     if (analysis.summary.medium_severity > 0) {
-      console.log("⚠️ MEDIUM severity divergence found → CI WARNING, but not failing.");
-      process.exit(1); // MEDIUM
+      console.log("⚠️ MEDIUM severity divergence found → CI WARNING (not failing).");
+      process.exit(0);
     }
 
     console.log("🎉 No severe divergences detected → CI PASS.");
-    process.exit(0); // LOW or no issues
+    process.exit(0);
 
   } catch (err) {
     console.error("❌ Fatal Error:", err);

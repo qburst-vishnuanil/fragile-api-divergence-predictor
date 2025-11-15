@@ -8,29 +8,43 @@ export async function loadCodeSummary(dir) {
   const files = await glob(`${dir}/**/*.js`);
 
   let endpoints = [];
-  let rawText = "";   // Full source code for Gemini
+  let rawText = ""; // full code sent to LLM
 
   for (const file of files) {
     const text = await fs.readFile(file, "utf8");
     rawText += `\n// FILE: ${file}\n${text}\n`;
 
-    const routeRegex = /router\.(get|post|put|patch|delete)\s*\(\s*["'`](.*?)["'`]/g;
+    const routeRegex =
+      /router\.(get|post|put|patch|delete)\s*\(\s*["'`](.*?)["'`]\s*,\s*([A-Za-z0-9_]+)/g;
+
     let match;
 
     while ((match = routeRegex.exec(text)) !== null) {
       const method = match[1].toUpperCase();
-      const route = match[2];
+      const route = normalizePath(match[2]);
+      const handler = match[3];
+
+      // extract handler function body
+      const fnRegex = new RegExp(
+        `export\\s+const\\s+${handler}\\s*=\\s*\\((.*?)=>\\s*{([\\s\\S]*?)};`,
+        "m"
+      );
+
+      const fnMatch = text.match(fnRegex);
+
+      const handlerBody = fnMatch ? fnMatch[2].trim() : "";
 
       endpoints.push({
         method,
-        path: normalizePath(route)
+        path: route,
+        handler,
+        handler_body: handlerBody
       });
     }
   }
 
   return {
-    raw: rawText,                     // Full source code
-    summary: JSON.stringify(endpoints, null, 2), // Endpoints JSON
+    raw: rawText,
     endpoints
   };
 }
