@@ -25,45 +25,45 @@ try {
   users = [];
 }
 
-// // GET /users
-// export const getUsers = (req, res) => {
-//   return res.status(201).json(users);
-// };
+// GET /users
+export const getUsers = (req, res) => {
+  return res.status(201).json(users);
+};
 
-// // POST /users
-// export const createUser = (req, res) => {
-//   const { name , role } = req.body;
+// POST /users
+export const createUser = (req, res) => {
+  const { name , role } = req.body;
 
-//   if (!name || !role) {
-//     return res.status(400).json({
-//       error: "name and role are required "
-//     });
-//   }
+  if (!name || !role) {
+    return res.status(400).json({
+      error: "name and role are required "
+    });
+  }
 
-//   const newUser = {
-//     id: users.length > 0 ? Math.max(...users.map(u => u.id)) + 1 : 1,
-//     name,
-//     role
-//   };
+  const newUser = {
+    id: users.length > 0 ? Math.max(...users.map(u => u.id)) + 1 : 1,
+    name,
+    role
+  };
 
-//   users.push(newUser);
+  users.push(newUser);
 
-//   return res.status(201).json(newUser);
-// };
+  return res.status(201).json(newUser);
+};
 
-// // GET /users/:id 
-// export const getUserById = (req, res) => {
-//   const { id } = req.params;
-//   const user = users.find(u => u.id === Number(id));
+// GET /users/:id 
+export const getUserById = (req, res) => {
+  const { id } = req.params;
+  const user = users.find(u => u.id === Number(id));
 
-//   if (!user) {
-//     return res.status(404).json({ error: "User not found " });
-//   }
+  if (!user) {
+    return res.status(404).json({ error: "User not found " });
+  }
 
-//   return res.status(200).json(user);
-// };
+  return res.status(200).json(user);
+};
 
-// //GET /order
-// export const getOrder = (req,res) => {
-//     return res.status(200).json(orders);
-// }
+//GET /order
+export const getOrder = (req,res) => {
+    return res.status(200).json(orders);
+}
