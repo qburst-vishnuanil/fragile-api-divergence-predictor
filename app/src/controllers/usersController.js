@@ -51,7 +51,7 @@ export const createUser = (req, res) => {
   return res.status(201).json(newUser);
 };
 
-// GET /users/:id
+// GET /users/:id 
 export const getUserById = (req, res) => {
   const { id } = req.params;
   const user = users.find(u => u.id === Number(id));
